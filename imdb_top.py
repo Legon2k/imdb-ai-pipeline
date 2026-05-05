@@ -5,60 +5,61 @@ from playwright.async_api import async_playwright
 async def scrape_imdb_top_250():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
+
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0"
         )
+
         page = await context.new_page()
 
-        # Оптимизация: не качаем картинки, чтобы не было таймаута
-        async def block_aggressively(route):
-            if route.request.resource_type in ["image", "media", "font"]:
-                await route.abort()
-            else:
-                await route.continue_()
-        await page.route("**/*", block_aggressively)
+        # Блокируем тяжёлые ресурсы
+        await page.route("**/*", lambda route: (
+            route.abort() if route.request.resource_type in ["image", "media", "font"]
+            else route.continue_()
+        ))
 
-        print("Загружаем страницу (с увеличенным таймаутом)...")
-        try:
-            # Ждем только структуру текста, а не всю тяжелую графику
-            await page.goto("https://www.imdb.com/chart/top/", 
-                           timeout=60000, 
-                           wait_until="domcontentloaded")
+        await page.goto(
+            "https://www.imdb.com/chart/top/",
+            wait_until="domcontentloaded"
+        )
 
-            # Ждем, пока прогрузится основной список
-            await page.wait_for_selector(".ipc-metadata-list-summary-item", timeout=20000)
+        # 💡 Ждём, пока появятся ВСЕ 250 элементов
+        await page.wait_for_function(
+            "() => document.querySelectorAll('.ipc-metadata-list-summary-item').length >= 250",
+            timeout=30000
+        )
 
-            movies_elements = await page.query_selector_all(".ipc-metadata-list-summary-item")
-            movies_data = []
+        movies = page.locator(".ipc-metadata-list-summary-item")
+        count = await movies.count()
 
-            print(f"Найдено элементов: {len(movies_elements)}. Начинаем сбор данных...")
+        print(f"Элементов: {count}")
 
-            for movie in movies_elements:
-                title_element = await movie.query_selector(".ipc-title__text")
-                title = await title_element.inner_text() if title_element else "N/A"
+        results = []
 
-                rating_element = await movie.query_selector('span[data-testid="ratingGroup--container"]')
-                rating = await rating_element.inner_text() if rating_element else "N/A"
+        for i in range(count):
+            movie = movies.nth(i)
 
-                # Ссылка на картинку все равно будет в атрибуте src, даже если мы ее заблокировали
-                img_element = await movie.query_selector("img.ipc-image")
-                img_url = await img_element.get_attribute("src") if img_element else "N/A"
+            title = await movie.locator(".ipc-title__text").inner_text()
 
-                movies_data.append({
-                    "title": title,
-                    "rating": rating.strip().split('\n')[0],
-                    "image_url": img_url
-                })
+            rating = await movie.locator(
+                "span[aria-label*='rating']"
+            ).inner_text()
 
-            with open("imdb_top_250.json", "w", encoding="utf-8") as f:
-                json.dump(movies_data, f, ensure_ascii=False, indent=4)
+            img = await movie.locator("img").get_attribute("src")
 
-            print(f"Успех! Собрано {len(movies_data)} фильмов.")
+            results.append({
+                "title": title,
+                "rating": rating,
+                "image_url": img
+            })
 
-        except Exception as e:
-            print(f"Ошибка: {e}")
-        finally:
-            await browser.close()
+        with open("imdb_top_250.json", "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
+
+        print("Готово!")
+
+        await browser.close()
+
 
 if __name__ == "__main__":
     asyncio.run(scrape_imdb_top_250())
