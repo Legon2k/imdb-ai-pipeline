@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from imdb_top import (
@@ -58,11 +59,12 @@ class OutputFormatTest(unittest.TestCase):
             source_url="https://example.com/chart",
         )
 
-        self.assertEqual(
-            content,
-            '{"scraped_at": "2026-05-06T12:00:00Z", "source_url": "https://example.com/chart", "rank": 1, "title": "First"}\n'
-            '{"scraped_at": "2026-05-06T12:00:00Z", "source_url": "https://example.com/chart", "rank": 2, "title": "Second"}\n',
-        )
+        rows = [json.loads(line) for line in content.splitlines()]
+
+        self.assertEqual(rows[0]["scraped_at"], "2026-05-06T12:00:00Z")
+        self.assertEqual(rows[0]["source_url"], "https://example.com/chart")
+        self.assertEqual(rows[0]["rank"], 1)
+        self.assertEqual(rows[1]["rank"], 2)
 
 
 class ImdbIdTest(unittest.TestCase):

@@ -5,8 +5,14 @@ Scrapes the IMDb Top 250 chart and saves movie data to JSON.
 ## Setup
 
 ```powershell
-pip install playwright
+pip install -r requirements.txt
 python -m playwright install chromium
+```
+
+For development tools:
+
+```powershell
+pip install -r requirements-dev.txt
 ```
 
 ## Usage
@@ -84,6 +90,37 @@ docker compose run --rm scraper --format jsonl --output /data/custom.jsonl
 
 ```powershell
 python -m unittest discover -s tests
+```
+
+## Code Quality
+
+Run Ruff linting:
+
+```powershell
+ruff check .
+```
+
+Format code:
+
+```powershell
+ruff format .
+```
+
+## Makefile
+
+If `make` is available, these shortcuts are supported:
+
+```powershell
+make install
+make install-dev
+make install-browser
+make test
+make lint
+make format
+make scrape
+make docker-build
+make docker-run
+make compose-run
 ```
 
 ## Output

@@ -9,7 +9,6 @@ from typing import Literal
 
 from playwright.async_api import Browser, Page, Route, async_playwright
 
-
 IMDB_TOP_URL = "https://www.imdb.com/chart/top/"
 MOVIE_SELECTOR = ".ipc-metadata-list-summary-item"
 EXPECTED_MOVIE_COUNT = 250
@@ -124,9 +123,7 @@ async def scrape_imdb_top_250(
             LOGGER.warning("Scrape attempt %s failed: %s", attempt, exc)
             await asyncio.sleep(attempt)
 
-    raise RuntimeError(
-        f"Failed to scrape IMDb Top 250 after {retries} attempts."
-    ) from last_error
+    raise RuntimeError(f"Failed to scrape IMDb Top 250 after {retries} attempts.") from last_error
 
 
 async def scrape_once(output_path: Path, output_format: OutputFormat) -> list[dict]:
@@ -145,16 +142,18 @@ async def scrape_once(output_path: Path, output_format: OutputFormat) -> list[di
 
             await page.goto(IMDB_TOP_URL, wait_until="domcontentloaded", timeout=60_000)
             await page.wait_for_selector(MOVIE_SELECTOR, timeout=30_000)
+            movie_count_expression = (
+                f"() => document.querySelectorAll('{MOVIE_SELECTOR}').length "
+                f">= {EXPECTED_MOVIE_COUNT}"
+            )
             await page.wait_for_function(
-                f"() => document.querySelectorAll('{MOVIE_SELECTOR}').length >= {EXPECTED_MOVIE_COUNT}",
+                movie_count_expression,
                 timeout=30_000,
             )
 
             results = await extract_movies(page)
             if len(results) < EXPECTED_MOVIE_COUNT:
-                raise RuntimeError(
-                    f"Expected {EXPECTED_MOVIE_COUNT} movies, got {len(results)}."
-                )
+                raise RuntimeError(f"Expected {EXPECTED_MOVIE_COUNT} movies, got {len(results)}.")
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
             write_movies(
@@ -193,10 +192,7 @@ def format_movies(
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
-    rows = (
-        {"scraped_at": scraped_at, "source_url": source_url, **movie}
-        for movie in movies
-    )
+    rows = ({"scraped_at": scraped_at, "source_url": source_url, **movie} for movie in movies)
     return "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n"
 
 
