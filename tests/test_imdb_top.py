@@ -1,6 +1,6 @@
 import unittest
 
-from imdb_top import parse_rating, parse_votes_count
+from imdb_top import format_movies, get_default_output_path, parse_rating, parse_votes_count
 
 
 class ParseRatingTest(unittest.TestCase):
@@ -23,6 +23,40 @@ class ParseRatingTest(unittest.TestCase):
 
     def test_parse_votes_count_unknown_format(self):
         self.assertIsNone(parse_votes_count("not available"))
+
+
+class OutputFormatTest(unittest.TestCase):
+    def test_default_output_path_uses_format_extension(self):
+        self.assertEqual(get_default_output_path("json").name, "imdb_top_250.json")
+        self.assertEqual(get_default_output_path("jsonl").name, "imdb_top_250.jsonl")
+
+    def test_format_movies_as_json(self):
+        content = format_movies(
+            [{"rank": 1, "title": "Movie"}],
+            "json",
+            scraped_at="2026-05-06T12:00:00Z",
+            source_url="https://example.com/chart",
+        )
+
+        self.assertIn('"scraped_at": "2026-05-06T12:00:00Z"', content)
+        self.assertIn('"source_url": "https://example.com/chart"', content)
+        self.assertIn('"movies": [', content)
+        self.assertIn('"rank": 1', content)
+        self.assertTrue(content.startswith("{"))
+
+    def test_format_movies_as_jsonl(self):
+        content = format_movies(
+            [{"rank": 1, "title": "First"}, {"rank": 2, "title": "Second"}],
+            "jsonl",
+            scraped_at="2026-05-06T12:00:00Z",
+            source_url="https://example.com/chart",
+        )
+
+        self.assertEqual(
+            content,
+            '{"scraped_at": "2026-05-06T12:00:00Z", "source_url": "https://example.com/chart", "rank": 1, "title": "First"}\n'
+            '{"scraped_at": "2026-05-06T12:00:00Z", "source_url": "https://example.com/chart", "rank": 2, "title": "Second"}\n',
+        )
 
 
 if __name__ == "__main__":

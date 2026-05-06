@@ -3,7 +3,9 @@ import asyncio
 import json
 import logging
 import re
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from playwright.async_api import Browser, Page, Route, async_playwright
 
@@ -11,8 +13,10 @@ from playwright.async_api import Browser, Page, Route, async_playwright
 IMDB_TOP_URL = "https://www.imdb.com/chart/top/"
 MOVIE_SELECTOR = ".ipc-metadata-list-summary-item"
 EXPECTED_MOVIE_COUNT = 250
-DEFAULT_OUTPUT_PATH = Path(__file__).with_name("data") / "imdb_top_250.json"
+DEFAULT_OUTPUT_DIR = Path(__file__).with_name("data")
+DEFAULT_OUTPUT_STEM = "imdb_top_250"
 DEFAULT_RETRIES = 3
+OutputFormat = Literal["json", "jsonl"]
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -90,7 +94,8 @@ async def extract_movies(page: Page) -> list[dict]:
 
 
 async def scrape_imdb_top_250(
-    output_path: Path = DEFAULT_OUTPUT_PATH,
+    output_path: Path,
+    output_format: OutputFormat = "json",
     retries: int = DEFAULT_RETRIES,
 ) -> list[dict]:
     last_error: Exception | None = None
@@ -98,7 +103,7 @@ async def scrape_imdb_top_250(
     for attempt in range(1, retries + 1):
         try:
             LOGGER.info("Scraping IMDb Top 250, attempt %s of %s", attempt, retries)
-            return await scrape_once(output_path)
+            return await scrape_once(output_path, output_format)
         except Exception as exc:
             last_error = exc
             if attempt == retries:
@@ -112,7 +117,7 @@ async def scrape_imdb_top_250(
     ) from last_error
 
 
-async def scrape_once(output_path: Path) -> list[dict]:
+async def scrape_once(output_path: Path, output_format: OutputFormat) -> list[dict]:
     browser: Browser | None = None
 
     async with async_playwright() as p:
@@ -140,9 +145,12 @@ async def scrape_once(output_path: Path) -> list[dict]:
                 )
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(
-                json.dumps(results, ensure_ascii=False, indent=2),
-                encoding="utf-8",
+            write_movies(
+                results,
+                output_path,
+                output_format,
+                scraped_at=get_scraped_at(),
+                source_url=IMDB_TOP_URL,
             )
 
             return results
@@ -151,14 +159,62 @@ async def scrape_once(output_path: Path) -> list[dict]:
                 await browser.close()
 
 
+def get_default_output_path(output_format: OutputFormat) -> Path:
+    return DEFAULT_OUTPUT_DIR / f"{DEFAULT_OUTPUT_STEM}.{output_format}"
+
+
+def get_scraped_at() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def format_movies(
+    movies: list[dict],
+    output_format: OutputFormat,
+    scraped_at: str,
+    source_url: str,
+) -> str:
+    if output_format == "json":
+        payload = {
+            "scraped_at": scraped_at,
+            "source_url": source_url,
+            "movies": movies,
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+
+    rows = (
+        {"scraped_at": scraped_at, "source_url": source_url, **movie}
+        for movie in movies
+    )
+    return "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n"
+
+
+def write_movies(
+    movies: list[dict],
+    output_path: Path,
+    output_format: OutputFormat,
+    scraped_at: str,
+    source_url: str,
+) -> None:
+    output_path.write_text(
+        format_movies(movies, output_format, scraped_at, source_url),
+        encoding="utf-8",
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scrape IMDb Top 250 movies to JSON.")
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
-        default=DEFAULT_OUTPUT_PATH,
-        help=f"Output JSON path. Default: {DEFAULT_OUTPUT_PATH}",
+        default=None,
+        help="Output file path. Default: data/imdb_top_250.<format>",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["json", "jsonl"],
+        default="json",
+        help="Output format. Default: json",
     )
     parser.add_argument(
         "--retries",
@@ -178,8 +234,13 @@ def parse_args() -> argparse.Namespace:
 async def main() -> None:
     args = parse_args()
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
-    movies = await scrape_imdb_top_250(args.output, retries=args.retries)
-    LOGGER.info("Saved %s movies to %s", len(movies), args.output)
+    output_path = args.output or get_default_output_path(args.format)
+    movies = await scrape_imdb_top_250(
+        output_path,
+        output_format=args.format,
+        retries=args.retries,
+    )
+    LOGGER.info("Saved %s movies to %s", len(movies), output_path)
 
 
 if __name__ == "__main__":
