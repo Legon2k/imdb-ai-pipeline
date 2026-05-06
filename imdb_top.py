@@ -107,7 +107,9 @@ async def scrape_imdb_top_250(
             LOGGER.warning("Scrape attempt %s failed: %s", attempt, exc)
             await asyncio.sleep(attempt)
 
-    raise RuntimeError(f"Failed to scrape IMDb Top 250 after {retries} attempts.") from last_error
+    raise RuntimeError(
+        f"Failed to scrape IMDb Top 250 after {retries} attempts."
+    ) from last_error
 
 
 async def scrape_once(output_path: Path) -> list[dict]:
