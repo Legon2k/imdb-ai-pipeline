@@ -57,6 +57,17 @@ def parse_votes_count(raw_votes: str | None) -> int | None:
     return int(float(match.group("number")) * multiplier)
 
 
+def extract_imdb_id(imdb_url: str | None) -> str | None:
+    if not imdb_url:
+        return None
+
+    match = re.search(r"/title/(?P<imdb_id>tt\d+)/?", imdb_url)
+    if not match:
+        return None
+
+    return match.group("imdb_id")
+
+
 async def extract_movies(page: Page) -> list[dict]:
     movies = page.locator(MOVIE_SELECTOR)
 
@@ -85,6 +96,7 @@ async def extract_movies(page: Page) -> list[dict]:
     results = []
     for movie in raw_movies:
         rating, votes, votes_count = parse_rating(movie.pop("rating_text"))
+        movie["imdb_id"] = extract_imdb_id(movie.get("imdb_url"))
         movie["rating"] = rating
         movie["votes"] = votes
         movie["votes_count"] = votes_count

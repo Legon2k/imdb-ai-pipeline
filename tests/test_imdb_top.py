@@ -1,6 +1,12 @@
 import unittest
 
-from imdb_top import format_movies, get_default_output_path, parse_rating, parse_votes_count
+from imdb_top import (
+    extract_imdb_id,
+    format_movies,
+    get_default_output_path,
+    parse_rating,
+    parse_votes_count,
+)
 
 
 class ParseRatingTest(unittest.TestCase):
@@ -57,6 +63,21 @@ class OutputFormatTest(unittest.TestCase):
             '{"scraped_at": "2026-05-06T12:00:00Z", "source_url": "https://example.com/chart", "rank": 1, "title": "First"}\n'
             '{"scraped_at": "2026-05-06T12:00:00Z", "source_url": "https://example.com/chart", "rank": 2, "title": "Second"}\n',
         )
+
+
+class ImdbIdTest(unittest.TestCase):
+    def test_extract_imdb_id_from_title_url(self):
+        self.assertEqual(
+            extract_imdb_id("https://www.imdb.com/title/tt0111161/?ref_=chttp_t_1"),
+            "tt0111161",
+        )
+
+    def test_extract_imdb_id_from_path(self):
+        self.assertEqual(extract_imdb_id("/title/tt0068646/"), "tt0068646")
+
+    def test_extract_imdb_id_missing_value(self):
+        self.assertIsNone(extract_imdb_id(None))
+        self.assertIsNone(extract_imdb_id("https://www.imdb.com/chart/top/"))
 
 
 if __name__ == "__main__":
