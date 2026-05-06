@@ -47,6 +47,12 @@ To retry failed scrapes or change logging verbosity:
 python imdb_top.py --retries 5 --log-level DEBUG
 ```
 
+To omit poster image URLs:
+
+```powershell
+python imdb_top.py --no-images
+```
+
 ## Docker
 
 Build the image:
@@ -74,6 +80,12 @@ To write JSON Lines with Docker:
 docker run --rm -v "${PWD}/data:/data" imdb-top250-scraper --format jsonl --output /data/custom.jsonl
 ```
 
+To omit poster image URLs with Docker:
+
+```powershell
+docker run --rm -v "${PWD}/data:/data" imdb-top250-scraper --no-images
+```
+
 Or use Docker Compose:
 
 ```powershell
@@ -84,6 +96,12 @@ With Docker Compose and JSON Lines:
 
 ```powershell
 docker compose run --rm scraper --format jsonl --output /data/custom.jsonl
+```
+
+With Docker Compose and no image URLs:
+
+```powershell
+docker compose run --rm scraper --no-images
 ```
 
 ## Tests
@@ -148,3 +166,20 @@ Each movie contains:
 - `votes_count`
 - `imdb_url`
 - `image_url`
+
+`image_url` is omitted when `--no-images` is used.
+
+Example movie record:
+
+```json
+{
+  "rank": 1,
+  "imdb_id": "tt0111161",
+  "title": "The Shawshank Redemption",
+  "imdb_url": "https://www.imdb.com/title/tt0111161/?ref_=chttp_t_1",
+  "image_url": "https://m.media-amazon.com/images/...",
+  "rating": 9.3,
+  "votes": "3.2M",
+  "votes_count": 3200000
+}
+```

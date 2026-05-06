@@ -5,7 +5,7 @@ import logging
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NotRequired, TypedDict
 
 from playwright.async_api import Browser, Page, Route, async_playwright
 
@@ -16,12 +16,32 @@ DEFAULT_OUTPUT_DIR = Path(__file__).with_name("data")
 DEFAULT_OUTPUT_STEM = "imdb_top_250"
 DEFAULT_RETRIES = 3
 OutputFormat = Literal["json", "jsonl"]
+REQUIRED_MOVIE_FIELDS = {
+    "rank",
+    "imdb_id",
+    "title",
+    "rating",
+    "votes",
+    "votes_count",
+    "imdb_url",
+}
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
 LOGGER = logging.getLogger(__name__)
+
+
+class Movie(TypedDict):
+    rank: int
+    imdb_id: str | None
+    title: str
+    rating: float | None
+    votes: str | None
+    votes_count: int | None
+    imdb_url: str | None
+    image_url: NotRequired[str | None]
 
 
 async def block_heavy_resources(route: Route) -> None:
@@ -67,7 +87,7 @@ def extract_imdb_id(imdb_url: str | None) -> str | None:
     return match.group("imdb_id")
 
 
-async def extract_movies(page: Page) -> list[dict]:
+async def extract_movies(page: Page, include_images: bool = True) -> list[Movie]:
     movies = page.locator(MOVIE_SELECTOR)
 
     raw_movies = await movies.evaluate_all(
@@ -92,29 +112,33 @@ async def extract_movies(page: Page) -> list[dict]:
         """
     )
 
-    results = []
+    results: list[Movie] = []
     for movie in raw_movies:
         rating, votes, votes_count = parse_rating(movie.pop("rating_text"))
         movie["imdb_id"] = extract_imdb_id(movie.get("imdb_url"))
         movie["rating"] = rating
         movie["votes"] = votes
         movie["votes_count"] = votes_count
+        if not include_images:
+            movie.pop("image_url", None)
         results.append(movie)
 
+    validate_movies(results)
     return results
 
 
 async def scrape_imdb_top_250(
     output_path: Path,
     output_format: OutputFormat = "json",
+    include_images: bool = True,
     retries: int = DEFAULT_RETRIES,
-) -> list[dict]:
+) -> list[Movie]:
     last_error: Exception | None = None
 
     for attempt in range(1, retries + 1):
         try:
             LOGGER.info("Scraping IMDb Top 250, attempt %s of %s", attempt, retries)
-            return await scrape_once(output_path, output_format)
+            return await scrape_once(output_path, output_format, include_images)
         except Exception as exc:
             last_error = exc
             if attempt == retries:
@@ -126,7 +150,11 @@ async def scrape_imdb_top_250(
     raise RuntimeError(f"Failed to scrape IMDb Top 250 after {retries} attempts.") from last_error
 
 
-async def scrape_once(output_path: Path, output_format: OutputFormat) -> list[dict]:
+async def scrape_once(
+    output_path: Path,
+    output_format: OutputFormat,
+    include_images: bool,
+) -> list[Movie]:
     browser: Browser | None = None
 
     async with async_playwright() as p:
@@ -151,7 +179,7 @@ async def scrape_once(output_path: Path, output_format: OutputFormat) -> list[di
                 timeout=30_000,
             )
 
-            results = await extract_movies(page)
+            results = await extract_movies(page, include_images=include_images)
             if len(results) < EXPECTED_MOVIE_COUNT:
                 raise RuntimeError(f"Expected {EXPECTED_MOVIE_COUNT} movies, got {len(results)}.")
 
@@ -178,8 +206,25 @@ def get_scraped_at() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def validate_movies(movies: list[Movie]) -> None:
+    for index, movie in enumerate(movies, start=1):
+        missing_fields = REQUIRED_MOVIE_FIELDS - movie.keys()
+        if missing_fields:
+            fields = ", ".join(sorted(missing_fields))
+            raise ValueError(f"Movie #{index} is missing required fields: {fields}")
+
+        if movie["rank"] != index:
+            raise ValueError(f"Movie #{index} has invalid rank: {movie['rank']}")
+
+        if not movie["title"]:
+            raise ValueError(f"Movie #{index} is missing title.")
+
+        if not movie["imdb_id"]:
+            raise ValueError(f"Movie #{index} is missing IMDb ID.")
+
+
 def format_movies(
-    movies: list[dict],
+    movies: list[Movie],
     output_format: OutputFormat,
     scraped_at: str,
     source_url: str,
@@ -197,7 +242,7 @@ def format_movies(
 
 
 def write_movies(
-    movies: list[dict],
+    movies: list[Movie],
     output_path: Path,
     output_format: OutputFormat,
     scraped_at: str,
@@ -236,6 +281,11 @@ def parse_args() -> argparse.Namespace:
         default="INFO",
         help="Logging verbosity. Default: INFO",
     )
+    parser.add_argument(
+        "--no-images",
+        action="store_true",
+        help="Omit image_url from output records.",
+    )
     return parser.parse_args()
 
 
@@ -246,6 +296,7 @@ async def main() -> None:
     movies = await scrape_imdb_top_250(
         output_path,
         output_format=args.format,
+        include_images=not args.no_images,
         retries=args.retries,
     )
     LOGGER.info("Saved %s movies to %s", len(movies), output_path)

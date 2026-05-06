@@ -7,6 +7,7 @@ from imdb_top import (
     get_default_output_path,
     parse_rating,
     parse_votes_count,
+    validate_movies,
 )
 
 
@@ -39,7 +40,17 @@ class OutputFormatTest(unittest.TestCase):
 
     def test_format_movies_as_json(self):
         content = format_movies(
-            [{"rank": 1, "title": "Movie"}],
+            [
+                {
+                    "rank": 1,
+                    "imdb_id": "tt0111161",
+                    "title": "Movie",
+                    "rating": 9.3,
+                    "votes": "3.2M",
+                    "votes_count": 3_200_000,
+                    "imdb_url": "https://www.imdb.com/title/tt0111161/",
+                }
+            ],
             "json",
             scraped_at="2026-05-06T12:00:00Z",
             source_url="https://example.com/chart",
@@ -53,7 +64,26 @@ class OutputFormatTest(unittest.TestCase):
 
     def test_format_movies_as_jsonl(self):
         content = format_movies(
-            [{"rank": 1, "title": "First"}, {"rank": 2, "title": "Second"}],
+            [
+                {
+                    "rank": 1,
+                    "imdb_id": "tt0111161",
+                    "title": "First",
+                    "rating": 9.3,
+                    "votes": "3.2M",
+                    "votes_count": 3_200_000,
+                    "imdb_url": "https://www.imdb.com/title/tt0111161/",
+                },
+                {
+                    "rank": 2,
+                    "imdb_id": "tt0068646",
+                    "title": "Second",
+                    "rating": 9.2,
+                    "votes": "2.2M",
+                    "votes_count": 2_200_000,
+                    "imdb_url": "https://www.imdb.com/title/tt0068646/",
+                },
+            ],
             "jsonl",
             scraped_at="2026-05-06T12:00:00Z",
             source_url="https://example.com/chart",
@@ -65,6 +95,54 @@ class OutputFormatTest(unittest.TestCase):
         self.assertEqual(rows[0]["source_url"], "https://example.com/chart")
         self.assertEqual(rows[0]["rank"], 1)
         self.assertEqual(rows[1]["rank"], 2)
+
+
+class MovieValidationTest(unittest.TestCase):
+    def test_validate_movies_accepts_required_fields_without_image_url(self):
+        validate_movies(
+            [
+                {
+                    "rank": 1,
+                    "imdb_id": "tt0111161",
+                    "title": "The Shawshank Redemption",
+                    "rating": 9.3,
+                    "votes": "3.2M",
+                    "votes_count": 3_200_000,
+                    "imdb_url": "https://www.imdb.com/title/tt0111161/",
+                }
+            ]
+        )
+
+    def test_validate_movies_rejects_missing_required_field(self):
+        with self.assertRaisesRegex(ValueError, "imdb_id"):
+            validate_movies(
+                [
+                    {
+                        "rank": 1,
+                        "title": "The Shawshank Redemption",
+                        "rating": 9.3,
+                        "votes": "3.2M",
+                        "votes_count": 3_200_000,
+                        "imdb_url": "https://www.imdb.com/title/tt0111161/",
+                    }
+                ]
+            )
+
+    def test_validate_movies_rejects_invalid_rank(self):
+        with self.assertRaisesRegex(ValueError, "invalid rank"):
+            validate_movies(
+                [
+                    {
+                        "rank": 2,
+                        "imdb_id": "tt0111161",
+                        "title": "The Shawshank Redemption",
+                        "rating": 9.3,
+                        "votes": "3.2M",
+                        "votes_count": 3_200_000,
+                        "imdb_url": "https://www.imdb.com/title/tt0111161/",
+                    }
+                ]
+            )
 
 
 class ImdbIdTest(unittest.TestCase):
