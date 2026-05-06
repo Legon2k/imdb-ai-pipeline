@@ -33,7 +33,7 @@ jobs:
         run: python -B -m unittest discover -s tests
 
   docker:
-    name: Docker build
+    name: Docker smoke build
     runs-on: ubuntu-latest
 
     steps:
@@ -42,3 +42,6 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t imdb-top250-scraper .
+
+      - name: Inspect Docker image
+        run: docker image inspect imdb-top250-scraper

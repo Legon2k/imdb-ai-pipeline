@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/imdb_top_250.schema.json",
+  "title": "IMDb Top 250 JSON output",
+  "type": "object",
+  "required": ["scraped_at", "source_url", "movies"],
+  "additionalProperties": false,
+  "properties": {
+    "scraped_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "movies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/movie"
+      }
+    }
+  },
+  "$defs": {
+    "movie": {
+      "type": "object",
+      "required": [
+        "rank",
+        "imdb_id",
+        "title",
+        "rating",
+        "votes",
+        "votes_count",
+        "imdb_url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "imdb_id": {
+          "type": "string",
+          "pattern": "^tt\\d+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rating": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 10
+        },
+        "votes": {
+          "type": ["string", "null"]
+        },
+        "votes_count": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "imdb_url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        },
+        "image_url": {
+          "type": ["string", "null"],
+          "format": "uri"
+        }
+      }
+    }
+  }
+}

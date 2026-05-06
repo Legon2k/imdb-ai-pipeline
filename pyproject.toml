@@ -8,6 +8,9 @@ dependencies = [
     "playwright==1.59.0",
 ]
 
+[project.scripts]
+imdb-top250-scraper = "imdb_top250_scraper.cli:run"
+
 [project.optional-dependencies]
 dev = [
     "ruff>=0.14,<1",

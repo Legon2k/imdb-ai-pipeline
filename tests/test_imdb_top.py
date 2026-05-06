@@ -1,14 +1,12 @@
 import json
 import unittest
+from pathlib import Path
 
-from imdb_top import (
-    extract_imdb_id,
-    format_movies,
-    get_default_output_path,
-    parse_rating,
-    parse_votes_count,
-    validate_movies,
-)
+from imdb_top250_scraper.output import format_movies, get_default_output_path
+from imdb_top250_scraper.parsing import extract_imdb_id, parse_rating, parse_votes_count
+from imdb_top250_scraper.validation import validate_movies
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class ParseRatingTest(unittest.TestCase):
@@ -54,6 +52,7 @@ class OutputFormatTest(unittest.TestCase):
             "json",
             scraped_at="2026-05-06T12:00:00Z",
             source_url="https://example.com/chart",
+            pretty=True,
         )
 
         self.assertIn('"scraped_at": "2026-05-06T12:00:00Z"', content)
@@ -87,6 +86,7 @@ class OutputFormatTest(unittest.TestCase):
             "jsonl",
             scraped_at="2026-05-06T12:00:00Z",
             source_url="https://example.com/chart",
+            pretty=True,
         )
 
         rows = [json.loads(line) for line in content.splitlines()]
@@ -95,6 +95,28 @@ class OutputFormatTest(unittest.TestCase):
         self.assertEqual(rows[0]["source_url"], "https://example.com/chart")
         self.assertEqual(rows[0]["rank"], 1)
         self.assertEqual(rows[1]["rank"], 2)
+
+    def test_format_movies_as_compact_json(self):
+        content = format_movies(
+            [
+                {
+                    "rank": 1,
+                    "imdb_id": "tt0111161",
+                    "title": "Movie",
+                    "rating": 9.3,
+                    "votes": "3.2M",
+                    "votes_count": 3_200_000,
+                    "imdb_url": "https://www.imdb.com/title/tt0111161/",
+                }
+            ],
+            "json",
+            scraped_at="2026-05-06T12:00:00Z",
+            source_url="https://example.com/chart",
+            pretty=False,
+        )
+
+        self.assertNotIn("\n", content)
+        self.assertIn('"movies":[', content)
 
 
 class MovieValidationTest(unittest.TestCase):
@@ -158,6 +180,20 @@ class ImdbIdTest(unittest.TestCase):
     def test_extract_imdb_id_missing_value(self):
         self.assertIsNone(extract_imdb_id(None))
         self.assertIsNone(extract_imdb_id("https://www.imdb.com/chart/top/"))
+
+
+class SchemaTest(unittest.TestCase):
+    def test_json_schema_files_are_valid_json(self):
+        schema_paths = [
+            PROJECT_ROOT / "schema" / "imdb_top_250.schema.json",
+            PROJECT_ROOT / "schema" / "imdb_top_250_jsonl_line.schema.json",
+        ]
+
+        for schema_path in schema_paths:
+            with self.subTest(schema_path=schema_path):
+                schema = json.loads(schema_path.read_text(encoding="utf-8"))
+                self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
+                self.assertIn("required", schema)
 
 
 if __name__ == "__main__":

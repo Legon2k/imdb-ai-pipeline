@@ -47,6 +47,24 @@ To retry failed scrapes or change logging verbosity:
 python imdb_top.py --retries 5 --log-level DEBUG
 ```
 
+To scrape only the first 10 movies:
+
+```powershell
+python imdb_top.py --limit 10
+```
+
+To write compact JSON instead of pretty-printed JSON:
+
+```powershell
+python imdb_top.py --compact
+```
+
+To adjust page timeout, locale, or user agent:
+
+```powershell
+python imdb_top.py --timeout 90 --locale en-US --user-agent "Mozilla/5.0 ..."
+```
+
 To omit poster image URLs:
 
 ```powershell
@@ -104,6 +122,12 @@ With Docker Compose and no image URLs:
 docker compose run --rm scraper --no-images
 ```
 
+With Docker Compose and a limited compact JSON output:
+
+```powershell
+docker compose run --rm scraper --limit 10 --compact --output /data/top10.json
+```
+
 ## Tests
 
 ```powershell
@@ -145,6 +169,17 @@ make compose-run
 
 GitHub Actions runs Ruff, unit tests, and Docker build on push and pull requests.
 The CI workflow does not run the real IMDb scrape, so checks stay fast and stable.
+
+## JSON Schema
+
+Schema files are available for downstream validation:
+
+- `schema/imdb_top_250.schema.json` for JSON output
+- `schema/imdb_top_250_jsonl_line.schema.json` for each JSON Lines row
+
+## Changelog
+
+See `CHANGELOG.md` for notable project changes.
 
 ## Output
 

@@ -6,6 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY imdb_top.py .
+COPY imdb_top250_scraper ./imdb_top250_scraper
 
 RUN mkdir -p /data
 
