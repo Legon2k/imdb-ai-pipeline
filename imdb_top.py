@@ -1,21 +1,24 @@
 import argparse
 import asyncio
 import json
+import logging
 import re
 from pathlib import Path
 
-from playwright.async_api import Browser, Route, async_playwright
+from playwright.async_api import Browser, Page, Route, async_playwright
 
 
 IMDB_TOP_URL = "https://www.imdb.com/chart/top/"
 MOVIE_SELECTOR = ".ipc-metadata-list-summary-item"
 EXPECTED_MOVIE_COUNT = 250
-DEFAULT_OUTPUT_PATH = Path(__file__).with_name("imdb_top_250.json")
+DEFAULT_OUTPUT_PATH = Path(__file__).with_name("data") / "imdb_top_250.json"
+DEFAULT_RETRIES = 3
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
+LOGGER = logging.getLogger(__name__)
 
 
 async def block_heavy_resources(route: Route) -> None:
@@ -25,17 +28,32 @@ async def block_heavy_resources(route: Route) -> None:
         await route.continue_()
 
 
-def parse_rating(raw_rating: str) -> tuple[float | None, str | None]:
+def parse_rating(raw_rating: str) -> tuple[float | None, str | None, int | None]:
     cleaned = " ".join(raw_rating.split()).replace("\xa0", " ")
     match = re.search(r"(?P<rating>\d+(?:\.\d+)?)\s*(?:\((?P<votes>[^)]+)\))?", cleaned)
 
     if not match:
-        return None, None
+        return None, None, None
 
-    return float(match.group("rating")), match.group("votes")
+    votes = match.group("votes")
+    return float(match.group("rating")), votes, parse_votes_count(votes)
 
 
-async def extract_movies(page) -> list[dict]:
+def parse_votes_count(raw_votes: str | None) -> int | None:
+    if not raw_votes:
+        return None
+
+    cleaned = raw_votes.strip().replace(",", "").upper()
+    match = re.fullmatch(r"(?P<number>\d+(?:\.\d+)?)(?P<suffix>[KMB])?", cleaned)
+    if not match:
+        return None
+
+    multipliers = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}
+    multiplier = multipliers.get(match.group("suffix"), 1)
+    return int(float(match.group("number")) * multiplier)
+
+
+async def extract_movies(page: Page) -> list[dict]:
     movies = page.locator(MOVIE_SELECTOR)
 
     raw_movies = await movies.evaluate_all(
@@ -62,15 +80,37 @@ async def extract_movies(page) -> list[dict]:
 
     results = []
     for movie in raw_movies:
-        rating, votes = parse_rating(movie.pop("rating_text"))
+        rating, votes, votes_count = parse_rating(movie.pop("rating_text"))
         movie["rating"] = rating
         movie["votes"] = votes
+        movie["votes_count"] = votes_count
         results.append(movie)
 
     return results
 
 
-async def scrape_imdb_top_250(output_path: Path = DEFAULT_OUTPUT_PATH) -> list[dict]:
+async def scrape_imdb_top_250(
+    output_path: Path = DEFAULT_OUTPUT_PATH,
+    retries: int = DEFAULT_RETRIES,
+) -> list[dict]:
+    last_error: Exception | None = None
+
+    for attempt in range(1, retries + 1):
+        try:
+            LOGGER.info("Scraping IMDb Top 250, attempt %s of %s", attempt, retries)
+            return await scrape_once(output_path)
+        except Exception as exc:
+            last_error = exc
+            if attempt == retries:
+                break
+
+            LOGGER.warning("Scrape attempt %s failed: %s", attempt, exc)
+            await asyncio.sleep(attempt)
+
+    raise RuntimeError(f"Failed to scrape IMDb Top 250 after {retries} attempts.") from last_error
+
+
+async def scrape_once(output_path: Path) -> list[dict]:
     browser: Browser | None = None
 
     async with async_playwright() as p:
@@ -118,13 +158,26 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_OUTPUT_PATH,
         help=f"Output JSON path. Default: {DEFAULT_OUTPUT_PATH}",
     )
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=DEFAULT_RETRIES,
+        help=f"Number of scrape attempts. Default: {DEFAULT_RETRIES}",
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Logging verbosity. Default: INFO",
+    )
     return parser.parse_args()
 
 
 async def main() -> None:
     args = parse_args()
-    movies = await scrape_imdb_top_250(args.output)
-    print(f"Saved {len(movies)} movies to {args.output}")
+    logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
+    movies = await scrape_imdb_top_250(args.output, retries=args.retries)
+    LOGGER.info("Saved %s movies to %s", len(movies), args.output)
 
 
 if __name__ == "__main__":

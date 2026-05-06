@@ -1,0 +1,6 @@
+services:
+  scraper:
+    image: imdb-top250-scraper
+    build: .
+    volumes:
+      - ./data:/data

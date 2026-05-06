@@ -219,6 +219,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# IMDB scrapping related 
+# IMDb scraper output
 
-data
+data/
+imdb_top_250.json
+*.tar
