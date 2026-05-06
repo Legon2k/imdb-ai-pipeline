@@ -141,6 +141,11 @@ make docker-run
 make compose-run
 ```
 
+## CI
+
+GitHub Actions runs Ruff, unit tests, and Docker build on push and pull requests.
+The CI workflow does not run the real IMDb scrape, so checks stay fast and stable.
+
 ## Output
 
 JSON output is an object with metadata and a `movies` array:
