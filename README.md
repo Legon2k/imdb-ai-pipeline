@@ -5,14 +5,14 @@ Scrapes the IMDb Top 250 chart and saves movie data to JSON.
 ## Setup
 
 ```powershell
-pip install -r requirements.txt
+pip install -r src/scraper_python/requirements.txt
 python -m playwright install chromium
 ```
 
 For development tools:
 
 ```powershell
-pip install -r requirements-dev.txt
+pip install -r src/scraper_python/requirements-dev.txt
 ```
 
 ## Usage
