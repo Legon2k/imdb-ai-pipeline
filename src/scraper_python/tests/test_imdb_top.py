@@ -1,10 +1,22 @@
 import json
+import os
+import sys
 import unittest
 from pathlib import Path
 
-from imdb_top250_scraper.output import format_movies, get_default_output_path
-from imdb_top250_scraper.parsing import extract_imdb_id, parse_rating, parse_votes_count
-from imdb_top250_scraper.validation import validate_movies
+# Attempt to import the package; if it's not importable (tests run via discovery),
+# add the src/ directory to sys.path and try again.
+try:
+    from imdb_top250_scraper.output import format_movies, get_default_output_path
+    from imdb_top250_scraper.parsing import extract_imdb_id, parse_rating, parse_votes_count
+    from imdb_top250_scraper.validation import validate_movies
+except Exception:
+    ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+    if ROOT not in sys.path:
+        sys.path.insert(0, ROOT)
+    from imdb_top250_scraper.output import format_movies, get_default_output_path
+    from imdb_top250_scraper.parsing import extract_imdb_id, parse_rating, parse_votes_count
+    from imdb_top250_scraper.validation import validate_movies
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 

@@ -5,8 +5,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY imdb_top.py .
-COPY imdb_top250_scraper ./imdb_top250_scraper
+# Copy package sources from the new src layout
+COPY src/imdb_top.py ./imdb_top.py
+COPY src/imdb_top250_scraper ./imdb_top250_scraper
 
 RUN mkdir -p /data
 

@@ -1,0 +1,31 @@
+{
+  "name": "Post Edit Python Check",
+  "description": "Runs pytest and flake8 after Python file edits in the scraper module.",
+  "events": {
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "pytest",
+        "cwd": "src/scraper_python",
+        "when": {
+          "tool": "edit",
+          "file": "src/scraper_python/**/*.py"
+        },
+        "successMessage": "Python tests passed after edit.",
+        "errorMessage": "Python tests failed after edit. Please review changes."
+      },
+      {
+        "type": "command",
+        "command": "flake8",
+        "args": ["src/scraper_python"],
+        "cwd": ".",
+        "when": {
+          "tool": "edit",
+          "file": "src/scraper_python/**/*.py"
+        },
+        "successMessage": "Python code linted successfully after edit.",
+        "errorMessage": "Python linting issues found after edit. Please fix them."
+      }
+    ]
+  }
+}

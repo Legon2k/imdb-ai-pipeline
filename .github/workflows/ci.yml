@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          pip install -r src/scraper_python/requirements-dev.txt
 
       - name: Ruff lint
         run: ruff check .
@@ -36,7 +36,7 @@ jobs:
         run: ruff format --check .
 
       - name: Unit tests
-        run: python -B -m unittest discover -s tests
+        run: python -m unittest discover -s src/scraper_python/tests -t src/scraper_python
 
   docker:
     name: Docker smoke build
@@ -47,7 +47,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -t imdb-top250-scraper .
+        run: docker build -t imdb-top250-scraper -f src/scraper_python/Dockerfile src/scraper_python
 
       - name: Inspect Docker image
         run: docker image inspect imdb-top250-scraper
