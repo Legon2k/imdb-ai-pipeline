@@ -36,7 +36,7 @@ jobs:
         run: ruff format --check .
 
       - name: Unit tests
-        run: python -B -m unittest discover -s tests
+        run: python -m unittest discover -s src/scraper_python/tests -t src/scraper_python
 
   docker:
     name: Docker smoke build
