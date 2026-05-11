@@ -10,7 +10,7 @@ install-browser:
 	python -m playwright install chromium
 
 test:
-	python -B -m unittest discover -s tests
+	python -B -m unittest discover -s src/scraper_python/tests
 
 lint:
 	ruff check .
