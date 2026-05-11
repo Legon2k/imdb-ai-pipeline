@@ -231,3 +231,7 @@ Example movie record:
   "votes_count": 3200000
 }
 ```
+
+## Diagrams
+
+Diagrams like `docs/Distributed scrapping system.drawio` are created with [Draw.io](https://www.drawio.com/) and can be edited using the application.
