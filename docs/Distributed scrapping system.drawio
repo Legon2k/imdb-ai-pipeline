@@ -1,0 +1,22 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Page-1" id="CYPgdEiUCbrgEbIMDjrv">
+    <mxGraphModel dx="860" dy="465" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="TTNOLwUFd5RSAz_LGkMf-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Python scapping engine" vertex="1">
+          <mxGeometry height="210" width="300" x="40" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="TTNOLwUFd5RSAz_LGkMf-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Radis" vertex="1">
+          <mxGeometry height="210" width="260" x="550" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="TTNOLwUFd5RSAz_LGkMf-4" edge="1" parent="1" source="TTNOLwUFd5RSAz_LGkMf-1" style="shape=flexArrow;endArrow=classic;html=1;rounded=0;" target="TTNOLwUFd5RSAz_LGkMf-2" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="400" y="195" as="sourcePoint" />
+            <mxPoint x="470.71067811865476" y="145" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
