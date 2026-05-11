@@ -22,7 +22,7 @@ scrape:
 	python -B src/scraper_python/src/imdb_top.py
 
 docker-build:
-	docker build -t imdb-top250-scraper .
+	docker build -t imdb-top250-scraper src/scraper_python
 
 docker-run:
 	docker run --rm -v "$(CURDIR)/data:/data" imdb-top250-scraper
