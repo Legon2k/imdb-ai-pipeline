@@ -19,7 +19,7 @@ format:
 	ruff format .
 
 scrape:
-	python -B imdb_top.py
+	python -B src/scraper_python/src/imdb_top.py
 
 docker-build:
 	docker build -t imdb-top250-scraper .
