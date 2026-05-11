@@ -1,10 +1,10 @@
 .PHONY: install install-dev install-browser test lint format scrape docker-build docker-run compose-run
 
 install:
-	python -m pip install -r requirements.txt
+	python -m pip install -r src/scraper_python/requirements.txt
 
 install-dev:
-	python -m pip install -r requirements-dev.txt
+	python -m pip install -r src/scraper_python/requirements-dev.txt
 
 install-browser:
 	python -m playwright install chromium
