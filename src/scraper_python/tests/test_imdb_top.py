@@ -1,6 +1,13 @@
+import os
+import sys
 import json
 import unittest
 from pathlib import Path
+
+# Ensure the package in src/ is importable when tests are run via discovery.
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 from imdb_top250_scraper.output import format_movies, get_default_output_path
 from imdb_top250_scraper.parsing import extract_imdb_id, parse_rating, parse_votes_count

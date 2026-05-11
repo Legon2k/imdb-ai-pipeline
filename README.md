@@ -17,8 +17,16 @@ pip install -r requirements-dev.txt
 
 ## Usage
 
+Run the bundled script from the repository root (new location):
+
 ```powershell
-python imdb_top.py
+python src/scraper_python/src/imdb_top.py
+```
+
+Alternatively, after installing the package you can use the console script entry point:
+
+```powershell
+imdb-top250-scraper
 ```
 
 By default, the script writes `data/imdb_top_250.json`.
@@ -26,54 +34,54 @@ By default, the script writes `data/imdb_top_250.json`.
 To choose another output file:
 
 ```powershell
-python imdb_top.py --output data/imdb_top_250.json
+python src/scraper_python/src/imdb_top.py --output data/imdb_top_250.json
 ```
 
 To write JSON Lines instead of a JSON array:
 
 ```powershell
-python imdb_top.py --format jsonl
+python src/scraper_python/src/imdb_top.py --format jsonl
 ```
 
 This writes `data/imdb_top_250.jsonl` by default. You can also choose the file name:
 
 ```powershell
-python imdb_top.py --format jsonl --output data/imdb_top_250.jsonl
+python src/scraper_python/src/imdb_top.py --format jsonl --output data/imdb_top_250.jsonl
 ```
 
 To retry failed scrapes or change logging verbosity:
 
 ```powershell
-python imdb_top.py --retries 5 --log-level DEBUG
+python src/scraper_python/src/imdb_top.py --retries 5 --log-level DEBUG
 ```
 
 To scrape only the first 10 movies:
 
 ```powershell
-python imdb_top.py --limit 10
+python src/scraper_python/src/imdb_top.py --limit 10
 ```
 
 To write compact JSON instead of pretty-printed JSON:
 
 ```powershell
-python imdb_top.py --compact
+python src/scraper_python/src/imdb_top.py --compact
 ```
 
 To adjust page timeout, locale, or user agent:
 
 ```powershell
-python imdb_top.py --timeout 90 --locale en-US --user-agent "Mozilla/5.0 ..."
+python src/scraper_python/src/imdb_top.py --timeout 90 --locale en-US --user-agent "Mozilla/5.0 ..."
 ```
 
 To omit poster image URLs:
 
 ```powershell
-python imdb_top.py --no-images
+python src/scraper_python/src/imdb_top.py --no-images
 ```
 
 ## Docker
 
-Build the image:
+Build the image from the repository root (root `Dockerfile` copies sources from the new layout):
 
 ```powershell
 docker build -t imdb-top250-scraper .
@@ -131,7 +139,7 @@ docker compose run --rm scraper --limit 10 --compact --output /data/top10.json
 ## Tests
 
 ```powershell
-python -m unittest discover -s tests
+python -m unittest discover -s src/scraper_python/tests
 ```
 
 ## Code Quality
@@ -172,10 +180,10 @@ The CI workflow does not run the real IMDb scrape, so checks stay fast and stabl
 
 ## JSON Schema
 
-Schema files are available for downstream validation:
+Schema files are available for downstream validation (new location):
 
-- `schema/imdb_top_250.schema.json` for JSON output
-- `schema/imdb_top_250_jsonl_line.schema.json` for each JSON Lines row
+- `src/scraper_python/schema/imdb_top_250.schema.json` for JSON output
+- `src/scraper_python/schema/imdb_top_250_jsonl_line.schema.json` for each JSON Lines row
 
 ## Changelog
 

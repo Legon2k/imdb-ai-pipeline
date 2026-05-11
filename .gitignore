@@ -224,3 +224,9 @@ __marimo__/
 data/
 imdb_top_250.json
 *.tar
+
+# Visual Studio (IDE) workspace and temporary files
+.vs/
+
+# Exclude Copilot snapshot directories created by Visual Studio
+.vs/**/CopilotSnapshots/
