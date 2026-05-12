@@ -1,0 +1,25 @@
+# ========================
+# .NET / C# SPECIFIC
+# ========================
+
+# Build results
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio specific
+.vs/
+*.user
+*.userosscache
+*.sln.rsuser
+*.suo
+
+# JetBrains Rider specific
+.idea/
+*.sln.iml
+
+# Test results[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+
+# Publish output
+[Pp]ublish/
+[Oo]ut/
