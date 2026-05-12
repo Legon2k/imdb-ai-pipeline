@@ -234,4 +234,5 @@ Example movie record:
 
 ## Diagrams
 
+
 Diagrams like `docs/architecture.drawio` are created with [Draw.io](https://www.drawio.com/) and can be edited using the application.
