@@ -1,6 +1,86 @@
+name: imdb-ai-pipeline
+
 services:
-  scraper:
-    image: imdb-top250-scraper
-    build: .
+  # ==========================================
+  # 1. INFRASTRUCTURE (DB, Message Broker, UI)
+  # ==========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: imdb_postgres
+    restart: unless-stopped
+    env_file:
+      - .env # <--- Путь исправлен (теперь ищет в корне)
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ./data:/data
+      # Named volume for data persistence across restarts
+      - pg_data:/var/lib/postgresql/data
+      # Auto-execute initialization script on first startup
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - internal_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: imdb_redis
+    restart: unless-stopped
+    env_file:
+      - .env # <--- Путь исправлен
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    # Enable AOF (Append Only File) for data durability
+    command: redis-server --appendonly yes
+    networks:
+      - internal_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: imdb_redis_insight
+    restart: unless-stopped
+    ports:
+      - "5540:5540" # GUI accessible at http://localhost:5540
+    networks:
+      - internal_network
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ==========================================
+  # 2. MICROSERVICES
+  # ==========================================
+  scraper:
+    container_name: imdb_scraper
+    # Point Docker to the scraper's source directory
+    build: 
+      context: ./src/scraper_python
+      dockerfile: Dockerfile
+    env_file:
+      - .env # <--- Путь исправлен
+    # Wait for Redis to be fully ready before starting the scraper
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - internal_network
+
+# Isolated network for secure inter-container communication
+networks:
+  internal_network:
+    driver: bridge
+
+# Host volumes for data persistence
+volumes:
+  pg_data:
+  redis_data:
