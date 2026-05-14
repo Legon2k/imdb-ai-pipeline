@@ -26,8 +26,8 @@ def positive_int(value: str) -> int:
 def parse_args() -> argparse.Namespace:
     """Parses command line arguments for the scraper."""
     parser = argparse.ArgumentParser(description="Scrape IMDb Top 250 movies and push to Redis.")
-    
-    # File output arguments (--output, --format, --pretty) were removed 
+
+    # File output arguments (--output, --format, --pretty) were removed
     # since we now use a message broker (Redis) for data ingestion.
 
     parser.add_argument(
@@ -76,7 +76,7 @@ async def main() -> None:
     """Main async entry point."""
     args = parse_args()
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
-    
+
     # Call the scraper without file output arguments
     movies = await scrape_imdb_top_250(
         include_images=not args.no_images,
@@ -86,7 +86,7 @@ async def main() -> None:
         user_agent=args.user_agent,
         locale=args.locale,
     )
-    
+
     LOGGER.info("Successfully pushed %s movies to Redis queue.", len(movies))
 
 

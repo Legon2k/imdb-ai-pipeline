@@ -2,9 +2,9 @@
 
 import asyncio
 import logging
-from pathlib import Path
 
-from playwright.async_api import Browser, Page, Route, async_playwright, Error as PlaywrightError
+from playwright.async_api import Browser, Page, Route, async_playwright
+from playwright.async_api import Error as PlaywrightError
 
 from imdb_top250_scraper.constants import (
     DEFAULT_LOCALE,
@@ -20,7 +20,7 @@ from imdb_top250_scraper.parsing import extract_imdb_id, parse_rating
 from imdb_top250_scraper.validation import validate_movies
 
 # Import our new Redis publisher
-from .redis_publisher import RedisPublisher 
+from .redis_publisher import RedisPublisher
 
 LOGGER = logging.getLogger(__name__)
 
@@ -156,18 +156,20 @@ async def scrape_once(
             # ENTERPRISE DATA PIPELINE: Push to Redis
             # ==========================================
             LOGGER.info("Successfully extracted %d movies. Pushing to Redis...", len(results))
-            
+
             publisher = RedisPublisher(queue_name="movies_queue")
             published_count = 0
-            
+
             for movie in results:
                 # Ensure the movie object is a dictionary before pushing
                 movie_dict = dict(movie) if not isinstance(movie, dict) else movie
                 success = publisher.publish_movie(movie_dict)
                 if success:
                     published_count += 1
-            
-            LOGGER.info("Successfully published %d/%d movies to Redis.", published_count, len(results))
+
+            LOGGER.info(
+                "Successfully published %d/%d movies to Redis.", published_count, len(results)
+            )
             # ==========================================
 
             return results
