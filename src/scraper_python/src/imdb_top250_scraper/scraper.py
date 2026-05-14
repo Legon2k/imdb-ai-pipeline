@@ -4,7 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from playwright.async_api import Browser, Page, Route, async_playwright
+from playwright.async_api import Browser, Page, Route, async_playwright, Error as PlaywrightError
 
 from imdb_top250_scraper.constants import (
     DEFAULT_LOCALE,
@@ -27,10 +27,14 @@ LOGGER = logging.getLogger(__name__)
 
 async def block_heavy_resources(route: Route) -> None:
     """Blocks images, media, and fonts to speed up page loading."""
-    if route.request.resource_type in {"image", "media", "font"}:
-        await route.abort()
-    else:
-        await route.continue_()
+    try:
+        if route.request.resource_type in {"image", "media", "font"}:
+            await route.abort()
+        else:
+            await route.continue_()
+    except PlaywrightError:
+        # Ignore errors if the browser closes while network requests are still pending
+        pass
 
 
 async def extract_movies(
