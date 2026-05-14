@@ -74,6 +74,25 @@ services:
         condition: service_healthy
     networks:
       - internal_network
+# ==========================================
+  # 3. BACKGROUND WORKERS
+  # ==========================================
+  worker:
+    container_name: imdb_worker
+    build: 
+      context: ./src/worker_dotnet
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    # Worker needs both Redis (queue) and Postgres (future storage) to be healthy
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal_network      
 
 # Isolated network for secure inter-container communication
 networks:
