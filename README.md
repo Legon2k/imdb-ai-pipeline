@@ -1,78 +1,63 @@
-# IMDB AI Pipeline: Data Ingestion Layer
+# IMDB AI Pipeline: Data Ingestion & Processing
 
-A high-performance, distributed data extraction pipeline. It scrapes the IMDb Top 250 chart using asynchronous Playwright and instantly streams the extracted movie data into a Redis message broker for downstream processing.
+A high-performance, distributed data extraction pipeline. It scrapes the IMDb Top 250 chart using asynchronous Playwright, streams the extracted data into a Redis message broker, and processes it asynchronously using a blazing-fast .NET 10 Worker.
 
 ## 🏗️ Architecture Overview
 
-This project is part of a larger microservice architecture:
-1. **Scraper (Python + Playwright):** Acts as a Producer. Extracts data from the DOM and pushes JSON payloads to Redis.
-2. **Message Broker (Redis):** Holds the `movies_queue` to ensure zero data loss.
-3. **Database (PostgreSQL):** Final persistent storage for the movies and future AI-generated summaries.
+This project is built using an Event-Driven ETL (Extract, Transform, Load) architecture:
+
+1. **Scraper (Python + Playwright):** Acts as the *Producer*. Extracts raw data from the DOM, blocks heavy resources to optimize speed, and pushes JSON payloads directly to Redis.
+2. **Message Broker (Redis):** Acts as the *Buffer*. Holds the `movies_queue` to ensure zero data loss and decouple extraction from processing.
+3. **Background Worker (.NET 10 + Dapper):** Acts as the *Consumer*. Listens to the Redis queue, instantly pops new messages, deserializes them, and performs a SQL UPSERT (Insert/Update) into the database.
+4. **Database (PostgreSQL):** Final persistent storage. Holds the cleaned movie records with a `status = 'pending'`, ready for future AI enrichment.
 
 ## 🚀 Quick Start (Docker Compose)
 
 The easiest way to run the entire infrastructure is using Docker Compose.
 
-**1. Start the Infrastructure (Databases & UI)**
+**1. Start the Infrastructure & Worker**
 ```bash
-docker compose up -d postgres redis redis-insight
+docker compose up -d postgres redis redis-insight worker
 ```
-*Wait a few seconds for the databases to initialize and become healthy.*
+*Wait a few seconds for the databases to initialize and the .NET worker to start listening to the queue.*
 
 **2. Monitor the Queue (UI)**
 Open your browser and navigate to **[http://localhost:5540](http://localhost:5540)** (Redis Insight). Connect to the `imdb_redis` host on port `6379` to monitor the data flow in real-time.
 
-**3. Run the Scraper**
-Start the ingestion process:
+**3. Run the Scraper (Data Ingestion)**
+Start the extraction process:
 ```bash
-docker compose up scraper
+docker compose start scraper
 ```
-The scraper will launch a headless Chromium instance, scrape the movies, push them to the Redis `movies_queue`, and gracefully exit.
+The scraper will launch a headless Chromium instance, scrape the movies, push them to the Redis `movies_queue`, and gracefully exit. The `.NET worker` will instantly pick up the payloads and save them to PostgreSQL.
 
-## 💻 Local Development (Python)
+**4. Verify Data in PostgreSQL**
+To see the processed results directly in the database:
+```bash
+docker exec -it imdb_postgres psql -U imdb_admin -d imdb_ai_db -c "SELECT rank, title, rating, status FROM movies ORDER BY rank LIMIT 10;"
+```
 
-If you want to run the scraper outside of Docker, ensure your virtual environment is set up and the infrastructure (Redis) is running.
+## 💻 Local Development (Python Scraper)
+
+If you want to run the scraper outside of Docker, ensure your virtual environment is set up and the infrastructure is running.
 
 ```powershell
-# Install dependencies
 pip install -r src/scraper_python/requirements.txt
 python -m playwright install chromium
 
-# Run the scraper
-python src/scraper_python/src/imdb_top.py
+python src/scraper_python/src/imdb_top.py --limit 10
 ```
 
 ### Supported CLI Arguments
 
-The scraper supports various configuration flags:
-
-To retry failed scrapes or change logging verbosity:
-```powershell
-python src/scraper_python/src/imdb_top.py --retries 5 --log-level DEBUG
-```
-
-To scrape only a specific number of movies (useful for testing):
-```powershell
-python src/scraper_python/src/imdb_top.py --limit 10
-```
-
-To adjust page timeout, locale, or user agent:
-```powershell
-python src/scraper_python/src/imdb_top.py --timeout 90 --locale en-US --user-agent "Mozilla/5.0 ..."
-```
-
-To omit poster image URLs to save bandwidth:
-```powershell
-python src/scraper_python/src/imdb_top.py --no-images
-```
-
-*(Note: File output arguments like `--output` and `--format` have been deprecated in favor of the Redis message broker).*
+- `--limit 10`: Scrape only a specific number of movies.
+- `--retries 5 --log-level DEBUG`: Retry failed scrapes and adjust verbosity.
+- `--timeout 90 --locale en-US --user-agent "Mozilla/5.0 ..."`: Adjust page timeout, locale, or user agent.
+- `--no-images`: Omit poster image URLs to save bandwidth.
 
 ## 📦 Message Payload Format (Redis)
 
-Instead of saving to a local JSON file, the scraper publishes a JSON object to the `movies_queue` list in Redis for each extracted movie.
-
-Example of a single message payload:
+The scraper publishes a JSON object to the `movies_queue` list in Redis for each extracted movie. The .NET Worker deserializes this payload and saves it to PostgreSQL.
 
 ```json
 {
@@ -89,7 +74,7 @@ Example of a single message payload:
 
 ## 🧪 Tests & Code Quality
 
-Run tests:
+Run Python tests:
 ```powershell
 python -m unittest discover -s src/scraper_python/tests
 ```
