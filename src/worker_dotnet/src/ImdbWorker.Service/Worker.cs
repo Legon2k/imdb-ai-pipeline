@@ -1,64 +1,86 @@
 // --- START OF FILE Worker.cs ---
 
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Dapper;
+using Npgsql;
 using StackExchange.Redis;
 
 namespace ImdbWorker.Service;
+
+// 1. Data Contract (Matches the Python JSON payload exactly)
+public record MoviePayload(
+    [property: JsonPropertyName("imdb_id")] string ImdbId,
+    [property: JsonPropertyName("rank")] int Rank,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("rating")] decimal Rating,
+    [property: JsonPropertyName("votes")] string Votes,
+    [property: JsonPropertyName("image_url")] string? ImageUrl
+);
 
 public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
     private readonly IConnectionMultiplexer _redis;
+    private readonly string _pgConnectionString;
     private const string QueueName = "movies_queue";
 
-    // Inject Dependencies via constructor
-    public Worker(ILogger<Worker> logger, IConnectionMultiplexer redis)
+    public Worker(ILogger<Worker> logger, IConnectionMultiplexer redis, PostgresConfig pgConfig)
     {
         _logger = logger;
         _redis = redis;
+        _pgConnectionString = pgConfig.ConnectionString;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("IMDB Worker started. Listening to Redis queue: {QueueName}", QueueName);
-        
+        _logger.LogInformation("IMDB Worker started. Listening to {QueueName}", QueueName);
         var db = _redis.GetDatabase();
 
-        // Run continuously until cancellation is requested (e.g., Docker stop)
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                // Pop from the right (RPOP) to process oldest messages first (FIFO)
-                // We use ListRightPopAsync instead of blocking BLPOP to avoid thread starvation in .NET
                 var redisValue = await db.ListRightPopAsync(QueueName);
 
                 if (redisValue.HasValue)
                 {
-                    _logger.LogInformation("Success! Popped movie from queue.");
+                    // 2. Deserialize JSON
+                    var movie = JsonSerializer.Deserialize<MoviePayload>(redisValue.ToString()!);
                     
-                    // For Iteration 1, we just print the JSON payload to the console
-                    // In Iteration 2, we will deserialize this and save it to PostgreSQL
-                    _logger.LogInformation("Payload: {Payload}", redisValue.ToString());
+                    if (movie != null)
+                    {
+                        // 3. Save to PostgreSQL using Dapper
+                        await SaveMovieToDatabaseAsync(movie, stoppingToken);
+                        _logger.LogInformation("Saved to DB: {Title}", movie.Title);
+                    }
                 }
                 else
                 {
-                    // Queue is empty, wait 1 second before polling again to save CPU cycles
                     await Task.Delay(1000, stoppingToken);
                 }
             }
-            catch (TaskCanceledException)
+            catch (Exception ex) when (ex is not TaskCanceledException)
             {
-                // Graceful shutdown requested, exit the loop cleanly
-                break;
-            }
-            catch (Exception ex)
-            {
-                // Prevent the entire background service from crashing on transient errors
-                _logger.LogError(ex, "Error occurred while polling Redis. Retrying in 5 seconds...");
+                _logger.LogError(ex, "Error processing message. Retrying...");
                 await Task.Delay(5000, stoppingToken);
             }
         }
-        
-        _logger.LogInformation("IMDB Worker gracefully stopped.");
+    }
+
+    private async Task SaveMovieToDatabaseAsync(MoviePayload movie, CancellationToken ct)
+    {
+        // SQL UPSERT: Insert if not exists, otherwise update rating and rank
+        const string sql = @"
+            INSERT INTO movies (imdb_id, rank, title, rating, votes, image_url, status)
+            VALUES (@ImdbId, @Rank, @Title, @Rating, @Votes, @ImageUrl, 'pending')
+            ON CONFLICT (imdb_id) DO UPDATE 
+            SET rank = EXCLUDED.rank,
+                rating = EXCLUDED.rating,
+                votes = EXCLUDED.votes,
+                updated_at = CURRENT_TIMESTAMP;";
+
+        await using var connection = new NpgsqlConnection(_pgConnectionString);
+        await connection.ExecuteAsync(new CommandDefinition(sql, movie, cancellationToken: ct));
     }
 }

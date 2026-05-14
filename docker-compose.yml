@@ -9,13 +9,11 @@ services:
     container_name: imdb_postgres
     restart: unless-stopped
     env_file:
-      - .env # <--- Путь исправлен (теперь ищет в корне)
+      - .env
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      # Named volume for data persistence across restarts
       - pg_data:/var/lib/postgresql/data
-      # Auto-execute initialization script on first startup
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - internal_network
@@ -30,12 +28,11 @@ services:
     container_name: imdb_redis
     restart: unless-stopped
     env_file:
-      - .env # <--- Путь исправлен
+      - .env
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
-    # Enable AOF (Append Only File) for data durability
     command: redis-server --appendonly yes
     networks:
       - internal_network
@@ -50,7 +47,7 @@ services:
     container_name: imdb_redis_insight
     restart: unless-stopped
     ports:
-      - "5540:5540" # GUI accessible at http://localhost:5540
+      - "5540:5540"
     networks:
       - internal_network
     depends_on:
@@ -58,24 +55,23 @@ services:
         condition: service_healthy
 
   # ==========================================
-  # 2. MICROSERVICES
+  # 2. DATA INGESTION (Scraper)
   # ==========================================
   scraper:
     container_name: imdb_scraper
-    # Point Docker to the scraper's source directory
     build: 
       context: ./src/scraper_python
       dockerfile: Dockerfile
     env_file:
-      - .env # <--- Путь исправлен
-    # Wait for Redis to be fully ready before starting the scraper
+      - .env
     depends_on:
       redis:
         condition: service_healthy
     networks:
       - internal_network
-# ==========================================
-  # 3. BACKGROUND WORKERS
+
+  # ==========================================
+  # 3. BACKGROUND WORKERS (.NET 10)
   # ==========================================
   worker:
     container_name: imdb_worker
@@ -85,21 +81,19 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    # Worker needs both Redis (queue) and Postgres (future storage) to be healthy
+    # Worker needs both Redis and Postgres to be healthy before starting
     depends_on:
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
     networks:
-      - internal_network      
+      - internal_network
 
-# Isolated network for secure inter-container communication
 networks:
   internal_network:
     driver: bridge
 
-# Host volumes for data persistence
 volumes:
   pg_data:
   redis_data:
