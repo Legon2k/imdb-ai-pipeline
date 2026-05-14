@@ -1,3 +1,5 @@
+# --- START OF FILE scraper.py ---
+
 import asyncio
 import logging
 from pathlib import Path
@@ -13,15 +15,18 @@ from imdb_top250_scraper.constants import (
     IMDB_TOP_URL,
     MOVIE_SELECTOR,
 )
-from imdb_top250_scraper.models import Movie, OutputFormat
-from imdb_top250_scraper.output import get_scraped_at, write_movies
+from imdb_top250_scraper.models import Movie
 from imdb_top250_scraper.parsing import extract_imdb_id, parse_rating
 from imdb_top250_scraper.validation import validate_movies
+
+# Import our new Redis publisher
+from .redis_publisher import RedisPublisher 
 
 LOGGER = logging.getLogger(__name__)
 
 
 async def block_heavy_resources(route: Route) -> None:
+    """Blocks images, media, and fonts to speed up page loading."""
     if route.request.resource_type in {"image", "media", "font"}:
         await route.abort()
     else:
@@ -33,6 +38,7 @@ async def extract_movies(
     include_images: bool = True,
     limit: int | None = None,
 ) -> list[Movie]:
+    """Extracts raw movie data from the DOM and formats it."""
     movies = page.locator(MOVIE_SELECTOR)
 
     raw_movies = await movies.evaluate_all(
@@ -76,27 +82,22 @@ async def extract_movies(
 
 
 async def scrape_imdb_top_250(
-    output_path: Path,
-    output_format: OutputFormat = "json",
     include_images: bool = True,
     limit: int | None = None,
-    pretty: bool = True,
     retries: int = DEFAULT_RETRIES,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     user_agent: str = DEFAULT_USER_AGENT,
     locale: str = DEFAULT_LOCALE,
 ) -> list[Movie]:
+    """Entry point with retry logic for scraping IMDb."""
     last_error: Exception | None = None
 
     for attempt in range(1, retries + 1):
         try:
             LOGGER.info("Scraping IMDb Top 250, attempt %s of %s", attempt, retries)
             return await scrape_once(
-                output_path,
-                output_format,
                 include_images,
                 limit,
-                pretty,
                 timeout_seconds,
                 user_agent,
                 locale,
@@ -113,15 +114,13 @@ async def scrape_imdb_top_250(
 
 
 async def scrape_once(
-    output_path: Path,
-    output_format: OutputFormat,
     include_images: bool,
     limit: int | None,
-    pretty: bool,
     timeout_seconds: int,
     user_agent: str,
     locale: str,
 ) -> list[Movie]:
+    """Single execution of the scraping logic using Playwright."""
     browser: Browser | None = None
     timeout_ms = timeout_seconds * 1000
 
@@ -149,15 +148,23 @@ async def scrape_once(
             if len(results) < expected_count:
                 raise RuntimeError(f"Expected {expected_count} movies, got {len(results)}.")
 
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            write_movies(
-                results,
-                output_path,
-                output_format,
-                scraped_at=get_scraped_at(),
-                source_url=IMDB_TOP_URL,
-                pretty=pretty,
-            )
+            # ==========================================
+            # ENTERPRISE DATA PIPELINE: Push to Redis
+            # ==========================================
+            LOGGER.info("Successfully extracted %d movies. Pushing to Redis...", len(results))
+            
+            publisher = RedisPublisher(queue_name="movies_queue")
+            published_count = 0
+            
+            for movie in results:
+                # Ensure the movie object is a dictionary before pushing
+                movie_dict = dict(movie) if not isinstance(movie, dict) else movie
+                success = publisher.publish_movie(movie_dict)
+                if success:
+                    published_count += 1
+            
+            LOGGER.info("Successfully published %d/%d movies to Redis.", published_count, len(results))
+            # ==========================================
 
             return results
         finally:

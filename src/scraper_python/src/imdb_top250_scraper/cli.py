@@ -1,7 +1,8 @@
+# --- START OF FILE cli.py ---
+
 import argparse
 import asyncio
 import logging
-from pathlib import Path
 
 from imdb_top250_scraper.constants import (
     DEFAULT_LOCALE,
@@ -9,13 +10,13 @@ from imdb_top250_scraper.constants import (
     DEFAULT_TIMEOUT_SECONDS,
     DEFAULT_USER_AGENT,
 )
-from imdb_top250_scraper.output import get_default_output_path
 from imdb_top250_scraper.scraper import scrape_imdb_top_250
 
 LOGGER = logging.getLogger(__name__)
 
 
 def positive_int(value: str) -> int:
+    """Validates that the CLI argument is a positive integer."""
     number = int(value)
     if number <= 0:
         raise argparse.ArgumentTypeError("must be greater than 0")
@@ -23,39 +24,17 @@ def positive_int(value: str) -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Scrape IMDb Top 250 movies to JSON.")
-    parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        default=None,
-        help="Output file path. Default: data/imdb_top_250.<format>",
-    )
-    parser.add_argument(
-        "--format",
-        choices=["json", "jsonl"],
-        default="json",
-        help="Output format. Default: json",
-    )
+    """Parses command line arguments for the scraper."""
+    parser = argparse.ArgumentParser(description="Scrape IMDb Top 250 movies and push to Redis.")
+    
+    # File output arguments (--output, --format, --pretty) were removed 
+    # since we now use a message broker (Redis) for data ingestion.
+
     parser.add_argument(
         "--limit",
         type=positive_int,
         default=None,
-        help="Limit the number of movies written to the output file.",
-    )
-    output_style = parser.add_mutually_exclusive_group()
-    output_style.add_argument(
-        "--pretty",
-        dest="pretty",
-        action="store_true",
-        default=True,
-        help="Pretty-print JSON output. Default for JSON.",
-    )
-    output_style.add_argument(
-        "--compact",
-        dest="pretty",
-        action="store_false",
-        help="Write compact JSON output. JSONL is always one compact object per line.",
+        help="Limit the number of movies scraped.",
     )
     parser.add_argument(
         "--timeout",
@@ -94,22 +73,23 @@ def parse_args() -> argparse.Namespace:
 
 
 async def main() -> None:
+    """Main async entry point."""
     args = parse_args()
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
-    output_path = args.output or get_default_output_path(args.format)
+    
+    # Call the scraper without file output arguments
     movies = await scrape_imdb_top_250(
-        output_path,
-        output_format=args.format,
         include_images=not args.no_images,
         limit=args.limit,
-        pretty=args.pretty,
         retries=args.retries,
         timeout_seconds=args.timeout,
         user_agent=args.user_agent,
         locale=args.locale,
     )
-    LOGGER.info("Saved %s movies to %s", len(movies), output_path)
+    
+    LOGGER.info("Successfully pushed %s movies to Redis queue.", len(movies))
 
 
 def run() -> None:
+    """Synchronous wrapper for the async main function."""
     asyncio.run(main())

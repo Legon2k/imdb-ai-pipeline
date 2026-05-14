@@ -12,4 +12,3 @@ COPY src/imdb_top250_scraper ./imdb_top250_scraper
 RUN mkdir -p /data
 
 ENTRYPOINT ["python", "imdb_top.py"]
-CMD ["--output", "/data/imdb_top_250.json"]
