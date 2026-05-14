@@ -1,223 +1,78 @@
-# imdb-top250-scraper
+# IMDB AI Pipeline: Data Ingestion Layer
 
-Scrapes the IMDb Top 250 chart and saves movie data to JSON.
+A high-performance, distributed data extraction pipeline. It scrapes the IMDb Top 250 chart using asynchronous Playwright and instantly streams the extracted movie data into a Redis message broker for downstream processing.
 
-## Setup
+## 🏗️ Architecture Overview
+
+This project is part of a larger microservice architecture:
+1. **Scraper (Python + Playwright):** Acts as a Producer. Extracts data from the DOM and pushes JSON payloads to Redis.
+2. **Message Broker (Redis):** Holds the `movies_queue` to ensure zero data loss.
+3. **Database (PostgreSQL):** Final persistent storage for the movies and future AI-generated summaries.
+
+## 🚀 Quick Start (Docker Compose)
+
+The easiest way to run the entire infrastructure is using Docker Compose.
+
+**1. Start the Infrastructure (Databases & UI)**
+```bash
+docker compose up -d postgres redis redis-insight
+```
+*Wait a few seconds for the databases to initialize and become healthy.*
+
+**2. Monitor the Queue (UI)**
+Open your browser and navigate to **[http://localhost:5540](http://localhost:5540)** (Redis Insight). Connect to the `imdb_redis` host on port `6379` to monitor the data flow in real-time.
+
+**3. Run the Scraper**
+Start the ingestion process:
+```bash
+docker compose up scraper
+```
+The scraper will launch a headless Chromium instance, scrape the movies, push them to the Redis `movies_queue`, and gracefully exit.
+
+## 💻 Local Development (Python)
+
+If you want to run the scraper outside of Docker, ensure your virtual environment is set up and the infrastructure (Redis) is running.
 
 ```powershell
+# Install dependencies
 pip install -r src/scraper_python/requirements.txt
 python -m playwright install chromium
-```
 
-For development tools:
-
-```powershell
-pip install -r src/scraper_python/requirements-dev.txt
-```
-
-## Usage
-
-Run the bundled script from the repository root (new location):
-
-```powershell
+# Run the scraper
 python src/scraper_python/src/imdb_top.py
 ```
 
-Alternatively, after installing the package you can use the console script entry point:
+### Supported CLI Arguments
 
-```powershell
-imdb-top250-scraper
-```
-
-By default, the script writes `data/imdb_top_250.json`.
-
-To choose another output file:
-
-```powershell
-python src/scraper_python/src/imdb_top.py --output data/imdb_top_250.json
-```
-
-To write JSON Lines instead of a JSON array:
-
-```powershell
-python src/scraper_python/src/imdb_top.py --format jsonl
-```
-
-This writes `data/imdb_top_250.jsonl` by default. You can also choose the file name:
-
-```powershell
-python src/scraper_python/src/imdb_top.py --format jsonl --output data/imdb_top_250.jsonl
-```
+The scraper supports various configuration flags:
 
 To retry failed scrapes or change logging verbosity:
-
 ```powershell
 python src/scraper_python/src/imdb_top.py --retries 5 --log-level DEBUG
 ```
 
-To scrape only the first 10 movies:
-
+To scrape only a specific number of movies (useful for testing):
 ```powershell
 python src/scraper_python/src/imdb_top.py --limit 10
 ```
 
-To write compact JSON instead of pretty-printed JSON:
-
-```powershell
-python src/scraper_python/src/imdb_top.py --compact
-```
-
 To adjust page timeout, locale, or user agent:
-
 ```powershell
 python src/scraper_python/src/imdb_top.py --timeout 90 --locale en-US --user-agent "Mozilla/5.0 ..."
 ```
 
-To omit poster image URLs:
-
+To omit poster image URLs to save bandwidth:
 ```powershell
 python src/scraper_python/src/imdb_top.py --no-images
 ```
 
-## Docker
+*(Note: File output arguments like `--output` and `--format` have been deprecated in favor of the Redis message broker).*
 
-Build the image from the repository root (root `Dockerfile` copies sources from the new layout):
+## 📦 Message Payload Format (Redis)
 
-```powershell
-docker build -t imdb-top250-scraper .
-```
+Instead of saving to a local JSON file, the scraper publishes a JSON object to the `movies_queue` list in Redis for each extracted movie.
 
-Run the scraper and save the result to `data/imdb_top_250.json` on your machine:
-
-```powershell
-New-Item -ItemType Directory -Force data
-docker run --rm -v "${PWD}/data:/data" imdb-top250-scraper
-```
-
-To choose another output file inside the mounted `/data` directory:
-
-```powershell
-docker run --rm -v "${PWD}/data:/data" imdb-top250-scraper --output /data/custom.json
-```
-
-To write JSON Lines with Docker:
-
-```powershell
-docker run --rm -v "${PWD}/data:/data" imdb-top250-scraper --format jsonl --output /data/custom.jsonl
-```
-
-To omit poster image URLs with Docker:
-
-```powershell
-docker run --rm -v "${PWD}/data:/data" imdb-top250-scraper --no-images
-```
-
-Or use Docker Compose:
-
-```powershell
-docker compose run --rm scraper
-```
-
-With Docker Compose and JSON Lines:
-
-```powershell
-docker compose run --rm scraper --format jsonl --output /data/custom.jsonl
-```
-
-With Docker Compose and no image URLs:
-
-```powershell
-docker compose run --rm scraper --no-images
-```
-
-With Docker Compose and a limited compact JSON output:
-
-```powershell
-docker compose run --rm scraper --limit 10 --compact --output /data/top10.json
-```
-
-## Tests
-
-```powershell
-python -m unittest discover -s src/scraper_python/tests
-```
-
-## Code Quality
-
-Run Ruff linting:
-
-```powershell
-ruff check .
-```
-
-Format code:
-
-```powershell
-ruff format .
-```
-
-## Makefile
-
-If `make` is available, these shortcuts are supported:
-
-```powershell
-make install
-make install-dev
-make install-browser
-make test
-make lint
-make format
-make scrape
-make docker-build
-make docker-run
-make compose-run
-```
-
-## CI
-
-GitHub Actions runs Ruff, unit tests, and Docker build on push and pull requests.
-The CI workflow does not run the real IMDb scrape, so checks stay fast and stable.
-
-## JSON Schema
-
-Schema files are available for downstream validation (new location):
-
-- `src/scraper_python/schema/imdb_top_250.schema.json` for JSON output
-- `src/scraper_python/schema/imdb_top_250_jsonl_line.schema.json` for each JSON Lines row
-
-## Changelog
-
-See `CHANGELOG.md` for notable project changes.
-
-## Output
-
-JSON output is an object with metadata and a `movies` array:
-
-```json
-{
-  "scraped_at": "2026-05-06T12:00:00Z",
-  "source_url": "https://www.imdb.com/chart/top/",
-  "movies": []
-}
-```
-
-JSON Lines output writes one movie object per line. Each line includes `scraped_at`
-and `source_url`.
-
-Each movie contains:
-
-- `rank`
-- `imdb_id`
-- `title`
-- `rating`
-- `votes`
-- `votes_count`
-- `imdb_url`
-- `image_url`
-
-`image_url` is omitted when `--no-images` is used.
-
-Example movie record:
+Example of a single message payload:
 
 ```json
 {
@@ -232,6 +87,23 @@ Example movie record:
 }
 ```
 
-## Diagrams
+## 🧪 Tests & Code Quality
 
-Diagrams like `docs/architecture.drawio` are created with [Draw.io](https://www.drawio.com/) and can be edited using the application.
+Run tests:
+```powershell
+python -m unittest discover -s src/scraper_python/tests
+```
+
+Run Ruff linting and formatting:
+```powershell
+ruff check .
+ruff format .
+```
+
+## 📈 CI / CD
+
+GitHub Actions automatically runs Ruff, unit tests, and Docker builds on push and pull requests to ensure code quality.
+
+## 🗺️ Diagrams
+
+System architecture diagrams can be found in `docs/architecture.drawio` and can be edited using [Draw.io](https://www.drawio.com/).
