@@ -1,10 +1,10 @@
 # IMDB AI Pipeline: Enterprise Data Extraction & Enrichment
 
-A high-performance, distributed data pipeline. It scrapes the IMDb Top 250 chart using asynchronous Playwright, streams the data into a Redis message broker, processes it asynchronously with a blazing-fast .NET 10 Worker, and uses a FastAPI gateway to enrich the data using Local LLMs (Ollama) and export business reports to Excel.
+A high-performance, distributed data pipeline. It scrapes the IMDb Top 250 chart using asynchronous Playwright, streams the data into a Redis message broker, processes it asynchronously with a blazing-fast .NET 10 Worker, and uses a decoupled Python AI Worker to enrich data via Local LLMs (Ollama), all orchestrated by a FastAPI gateway.
 
 ## 🏗️ Architecture Overview
 
-This project implements an Event-Driven ETL (Extract, Transform, Load) architecture:
+This project implements a fully decoupled Event-Driven ETL (Extract, Transform, Load) architecture with asynchronous task queues:
 
 ```mermaid
 graph TD
@@ -12,64 +12,70 @@ graph TD
     Client([Business Client])
     IMDB[IMDB Website]
     Scraper(Python + Playwright<br/>Data Producer)
-    Redis[(Redis Queue<br/>Message Broker)]
-    Worker(.NET 10 Worker<br/>Data Consumer)
+    Redis[(Redis<br/>Message Broker)]
+    WorkerNET(.NET 10 Worker<br/>Data Consumer)
     DB[(PostgreSQL<br/>Persistent Storage)]
     API(FastAPI<br/>API Gateway)
+    WorkerAI(Python AI Worker<br/>LLM Consumer)
     LLM{{Local LLM<br/>Ollama / Gemma}}
 
     %% Define Flow
     IMDB -- 1. Scrape DOM --> Scraper
     Scraper -- 2. Push JSON --> Redis
-    Redis -- 3. Pop (FIFO) --> Worker
-    Worker -- 4. Upsert (Pending) --> DB
+    Redis -- 3. Pop (movies_queue) --> WorkerNET
+    WorkerNET -- 4. Upsert (Pending) --> DB
     
     Client -- 5. Trigger Enrichment --> API
     API -- 6. Fetch Pending --> DB
-    API -- 7. Prompt --> LLM
-    LLM -- 8. Return Summary --> API
-    API -- 9. Update (Completed) --> DB
+    API -- 7. Push Tasks --> Redis
+    Redis -- 8. Pop (ai_queue) --> WorkerAI
+    WorkerAI -- 9. Prompt --> LLM
+    LLM -- 10. Summary --> WorkerAI
+    WorkerAI -- 11. Update (Completed) --> DB
     
-    Client -- 10. Download .xlsx --> API
+    Client -- 12. Download .xlsx --> API
 
     %% Styling
     style Scraper fill:#3776ab,stroke:#fff,stroke-width:2px,color:#fff
     style Redis fill:#dc382d,stroke:#fff,stroke-width:2px,color:#fff
-    style Worker fill:#512bd4,stroke:#fff,stroke-width:2px,color:#fff
+    style WorkerNET fill:#512bd4,stroke:#fff,stroke-width:2px,color:#fff
     style DB fill:#336791,stroke:#fff,stroke-width:2px,color:#fff
     style API fill:#009688,stroke:#fff,stroke-width:2px,color:#fff
+    style WorkerAI fill:#f6d04d,stroke:#fff,stroke-width:2px,color:#000
     style LLM fill:#f4a261,stroke:#fff,stroke-width:2px,color:#000
 ```
 
-1. **Scraper (Python):** Extracts raw data from the DOM, blocks heavy resources, and pushes JSON payloads to Redis.
-2. **Message Broker (Redis):** Holds the `movies_queue` to ensure zero data loss.
-3. **Background Worker (.NET 10 + Dapper):** Listens to the queue, deserializes payloads, and performs a SQL UPSERT into the database.
-4. **API Gateway (FastAPI):** Exposes a Swagger UI, orchestrates AI enrichment via local LLM, and generates `.xlsx` reports on the fly.
-5. **Database (PostgreSQL):** Final persistent storage for the movies and AI summaries.
+### Components:
+1. **Scraper (Python):** Extracts raw data from the DOM, blocks heavy resources, and pushes payloads to the `movies_queue`.
+2. **Message Broker (Redis):** Holds queues (`movies_queue` and `ai_queue`) to ensure zero data loss and enable asynchronous processing.
+3. **Data Worker (.NET 10 + Dapper):** Listens to `movies_queue`, deserializes payloads, and performs a SQL UPSERT into PostgreSQL.
+4. **API Gateway (FastAPI):** Exposes Swagger UI, exports `.xlsx` reports, and pushes AI tasks to the message broker.
+5. **AI Worker (Python):** A dedicated background worker listening to `ai_queue`. It communicates with the Local LLM one by one to prevent VRAM Out-Of-Memory (OOM) errors and timeouts.
+6. **Database (PostgreSQL):** Final persistent storage for movies and AI summaries.
 
 ## 🚀 Quick Start (Docker Compose)
 
 The easiest way to run the entire microservice architecture is using Docker Compose.
 
-**1. Start the Infrastructure, Worker, and API**
+**1. Start the Infrastructure, Workers, and API**
 ```bash
-docker compose up -d postgres redis redis-insight worker api
+docker compose up -d postgres redis redis-insight worker api worker_ai
 ```
 *Wait a few seconds for the databases to initialize.*
 
 **2. Access the UIs**
-- **Redis Insight:** [http://localhost:5540](http://localhost:5540) (Monitor the message queue)
+- **Redis Insight:** [http://localhost:5540](http://localhost:5540) (Monitor the message queues)
 - **FastAPI Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs) (API Endpoints)
 
 **3. Run the Scraper (Data Ingestion)**
 ```bash
 docker compose start scraper
 ```
-The scraper will launch a headless Chromium instance, scrape the movies, push them to the Redis queue, and exit. The `.NET worker` will instantly pick up the payloads and save them to PostgreSQL with a `pending` status.
+The scraper will push data to the queue, and the `.NET worker` will instantly pick up the payloads and save them to PostgreSQL with a `pending` status.
 
 ## 🪄 AI Enrichment (Local LLM)
 
-This pipeline integrates with local LLMs running on your host machine (e.g., Ollama with the `gemma4:e4b` model) to generate engaging summaries for the scraped movies.
+This pipeline integrates with local LLMs running on your host machine (e.g., Ollama with the `gemma4:e4b` model) using an asynchronous job queue.
 
 **1. Start Ollama on your host machine:**
 Ensure Ollama is listening on all interfaces so the Docker container can reach it. Using PowerShell:
@@ -78,29 +84,13 @@ $env:OLLAMA_HOST="0.0.0.0"; ollama run gemma4:e4b
 ```
 
 **2. Trigger the Enrichment API:**
-Go to the Swagger UI ([http://localhost:8000/docs](http://localhost:8000/docs)), open the `POST /movies/enrich` endpoint, set a limit, and execute. The API will fetch pending movies, generate summaries via Ollama, and update their status to `completed`.
+Go to the Swagger UI ([http://localhost:8000/docs](http://localhost:8000/docs)), open the `POST /movies/enrich` endpoint, and execute. 
+*Note: The API returns `HTTP 202 Accepted` instantly. The dedicated AI Worker processes the tasks in the background and updates the database.*
 
 ## 📊 Excel Export
 
 Business users can download a complete report containing movie data and AI-generated summaries in Excel format (`.xlsx`) by navigating to:
 [http://localhost:8000/movies/export](http://localhost:8000/movies/export)
-
-## 📦 Message Payload Format (Redis)
-
-The scraper publishes a JSON object to the `movies_queue` list in Redis. The .NET Worker deserializes this payload:
-
-```json
-{
-  "rank": 1,
-  "imdb_id": "tt0111161",
-  "title": "The Shawshank Redemption",
-  "imdb_url": "https://www.imdb.com/title/tt0111161/",
-  "image_url": "https://m.media-amazon.com/images/...",
-  "rating": 9.3,
-  "votes": "3.2M",
-  "votes_count": 3200000
-}
-```
 
 ## 💻 Local Development (Python Scraper)
 

@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-05-15
+### 🏗️ Infrastructure & Architecture
+- **Changed:** Upgraded system architecture to fully decoupled asynchronous task queues for LLM processing.
+- **Changed:** Updated `docker-compose.yml` to include the new `api` and `worker_ai` microservices.
+- **Fixed:** Resolved Docker container log buffering issues by enforcing `PYTHONUNBUFFERED=1` across all Python containers for real-time observability.
+- **Added:** Updated Mermaid.js architecture diagram in `README.md` to reflect the new AI-consumer pattern.
+
+### 🌐 FastAPI Gateway (New)
+- **Added:** Brand new `api_fastapi` microservice to act as the primary data delivery layer.
+- **Added:** Auto-generated Swagger UI documentation for easy client testing.
+- **Added:** `GET /movies/export` endpoint utilizing `pandas` and `openpyxl` to generate formatted Excel (`.xlsx`) reports on the fly.
+- **Added:** `POST /movies/enrich` asynchronous endpoint. It fetches `pending` movies and pushes task payloads to the Redis `ai_queue`, returning an instant `HTTP 202 Accepted` to prevent gateway timeouts.
+
+### 🤖 AI Worker (New)
+- **Added:** Dedicated `worker_ai_python` background service.
+- **Added:** Redis `BRPOP` consumer logic to process AI generation tasks one-by-one, preventing VRAM Out-Of-Memory (OOM) errors on the host machine.
+- **Added:** Seamless integration with Local LLMs (Ollama / `gemma4:e4b`) using asynchronous HTTP requests (`httpx`).
+- **Added:** PostgreSQL updates to transition movie statuses from `pending` -> `processing` -> `completed` after successful AI enrichment.
+
 ## [0.2.0] - 2026-05-14
 ### 🏗️ Infrastructure & Architecture
 - **Changed:** Transitioned the project to a Monorepo structure (`src/`, `infra/`, `docs/`) for better microservice management.

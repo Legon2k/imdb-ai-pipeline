@@ -108,7 +108,26 @@ services:
         condition: service_healthy
     networks:
       - internal_network
-      
+
+# ==========================================
+  # 5. AI BACKGROUND WORKER (Python)
+  # ==========================================
+  worker_ai:
+    container_name: imdb_ai_worker
+    build: 
+      context: ./src/worker_ai_python
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal_network      
+
 networks:
   internal_network:
     driver: bridge
