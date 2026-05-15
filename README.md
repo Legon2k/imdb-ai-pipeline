@@ -6,10 +6,46 @@ A high-performance, distributed data extraction pipeline. It scrapes the IMDb To
 
 This project is built using an Event-Driven ETL (Extract, Transform, Load) architecture:
 
-1. **Scraper (Python + Playwright):** Acts as the *Producer*. Extracts raw data from the DOM, blocks heavy resources to optimize speed, and pushes JSON payloads directly to Redis.
-2. **Message Broker (Redis):** Acts as the *Buffer*. Holds the `movies_queue` to ensure zero data loss and decouple extraction from processing.
-3. **Background Worker (.NET 10 + Dapper):** Acts as the *Consumer*. Listens to the Redis queue, instantly pops new messages, deserializes them, and performs a SQL UPSERT (Insert/Update) into the database.
-4. **Database (PostgreSQL):** Final persistent storage. Holds the cleaned movie records with a `status = 'pending'`, ready for future AI enrichment.
+```mermaid
+graph TD
+    %% Define Nodes
+    Client([Business Client])
+    IMDB[IMDB Website]
+    Scraper(Python + Playwright<br/>Data Producer)
+    Redis[(Redis Queue<br/>Message Broker)]
+    Worker(.NET 10 Worker<br/>Data Consumer)
+    DB[(PostgreSQL<br/>Persistent Storage)]
+    API(FastAPI<br/>API Gateway)
+    LLM{{Local LLM<br/>Ollama / Gemma}}
+
+    %% Define Flow
+    IMDB -- 1. Scrape DOM --> Scraper
+    Scraper -- 2. Push JSON --> Redis
+    Redis -- 3. Pop (FIFO) --> Worker
+    Worker -- 4. Upsert (Pending) --> DB
+    
+    Client -- 5. Trigger Enrichment --> API
+    API -- 6. Fetch Pending --> DB
+    API -- 7. Prompt --> LLM
+    LLM -- 8. Return Summary --> API
+    API -- 9. Update (Completed) --> DB
+    
+    Client -- 10. Download .xlsx --> API
+
+    %% Styling
+    style Scraper fill:#3776ab,stroke:#fff,stroke-width:2px,color:#fff
+    style Redis fill:#dc382d,stroke:#fff,stroke-width:2px,color:#fff
+    style Worker fill:#512bd4,stroke:#fff,stroke-width:2px,color:#fff
+    style DB fill:#336791,stroke:#fff,stroke-width:2px,color:#fff
+    style API fill:#009688,stroke:#fff,stroke-width:2px,color:#fff
+    style LLM fill:#f4a261,stroke:#fff,stroke-width:2px,color:#000
+```
+
+1. **Scraper (Python + Playwright):** Extracts raw data from the DOM and pushes JSON payloads to Redis.
+2. **Message Broker (Redis):** Holds the `movies_queue` to ensure zero data loss.
+3. **Background Worker (.NET 10 + Dapper):** Listens to the queue, deserializes payloads, and performs a SQL UPSERT.
+4. **Database (PostgreSQL):** Final persistent storage.
+5. **API Gateway (FastAPI):** Exposes Swagger UI, orchestrates AI enrichment via local LLM (Ollama), and exports data to `.xlsx`.
 
 ## 🚀 Quick Start (Docker Compose)
 

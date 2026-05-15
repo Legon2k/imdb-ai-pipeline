@@ -2,6 +2,7 @@
 
 import io
 import os
+import httpx
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any
 
@@ -79,7 +80,7 @@ async def export_movies_to_excel():
             status_code=500, detail="Database connection is not initialized."
         )
 
-    query = "SELECT rank, title, rating, votes, status FROM movies ORDER BY rank ASC;"
+    query = "SELECT rank, title, rating, votes, status, ai_summary FROM movies ORDER BY rank ASC;"
 
     async with db_pool.acquire() as connection:
         records = await connection.fetch(query)
@@ -91,16 +92,14 @@ async def export_movies_to_excel():
     df = pd.DataFrame([dict(r) for r in records])
 
     # 2. Rename columns for a professional Excel look
-    df.rename(
-        columns={
-            "rank": "Rank",
-            "title": "Movie Title",
-            "rating": "IMDB Rating",
-            "votes": "Total Votes",
-            "status": "AI Status",
-        },
-        inplace=True,
-    )
+    df.rename(columns={
+        "rank": "Rank",
+        "title": "Movie Title",
+        "rating": "IMDB Rating",
+        "votes": "Total Votes",
+        "status": "AI Status",
+        "ai_summary": "AI Generated Summary"
+    }, inplace=True)
 
     # 3. Write DataFrame to a virtual file (in-memory bytes buffer)
     output = io.BytesIO()
@@ -118,3 +117,71 @@ async def export_movies_to_excel():
         headers=headers,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+@app.post("/movies/enrich", summary="Enrich pending movies using Local LLM", tags=["AI Enrichment"])
+async def enrich_movies(limit: int = 5) -> Dict[str, Any]:
+    """
+    Fetches movies with status 'pending', sends them to a local LLM (Ollama/LM Studio) 
+    to generate an engaging summary, and updates their status to 'completed'.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database connection is not initialized.")
+    
+    # 1. Fetch pending movies
+    select_query = "SELECT id, title, rating FROM movies WHERE status = 'pending' LIMIT $1;"
+    async with db_pool.acquire() as connection:
+        pending_movies = await connection.fetch(select_query, limit)
+    
+    if not pending_movies:
+        return {"message": "No pending movies found to enrich.", "processed": 0}
+
+    llm_url = os.getenv("LLM_API_URL", "http://host.docker.internal:11434/api/generate")
+    model_name = os.getenv("LLM_MODEL_NAME", "llama3")
+    processed_count = 0
+    results = []
+
+    # 2. Setup Async HTTP Client for LLM communication
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        for movie in pending_movies:
+            movie_id = movie["id"]
+            title = movie["title"]
+            rating = movie["rating"]
+            
+            # Create a prompt for the LLM
+            prompt = f"Write a short, engaging 1-sentence summary for the famous movie '{title}' (IMDB Rating: {rating}). Do not include any intro, just the summary."
+            
+            payload = {
+                "model": model_name,
+                "prompt": prompt,
+                "stream": False
+            }
+            
+            try:
+                # 3. Call the Local LLM
+                response = await client.post(llm_url, json=payload)
+                response.raise_for_status()
+                
+                ai_data = response.json()
+                summary = ai_data.get("response", "").strip() # Use "choices" if OpenAI/LM Studio format
+                
+                # 4. Update the database with the AI summary
+                update_query = """
+                    UPDATE movies 
+                    SET ai_summary = $1, status = 'completed', updated_at = CURRENT_TIMESTAMP 
+                    WHERE id = $2;
+                """
+                async with db_pool.acquire() as connection:
+                    await connection.execute(update_query, summary, movie_id)
+                
+                results.append({"title": title, "summary": summary})
+                processed_count += 1
+                
+            except Exception as e:
+                # Log the error but continue processing the rest of the batch
+                print(f"Error enriching movie '{title}': {repr(e)}")
+                continue
+
+    return {
+        "message": f"Successfully enriched {processed_count} movies.",
+        "details": results
+    }
