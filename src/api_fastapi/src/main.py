@@ -167,7 +167,8 @@ async def enrich_movies(limit: int = 5) -> Dict[str, Any]:
             try:
                 # 3. Call the Local LLM with logging
                 print(
-                    f"[{rank}/250] Sending '{title}' to {model_name} for enrichment..."
+                    f"[{rank}/250] Sending '{title}' to {model_name} for enrichment...",
+                    flush=True,
                 )
 
                 response = await client.post(llm_url, json=payload)
@@ -185,14 +186,17 @@ async def enrich_movies(limit: int = 5) -> Dict[str, Any]:
                 async with db_pool.acquire() as connection:
                     await connection.execute(update_query, summary, movie_id)
 
-                print(f"[{rank}/250] Successfully generated summary for '{title}'.")
+                print(
+                    f"[{rank}/250] Successfully generated summary for '{title}'.",
+                    flush=True,
+                )
 
                 results.append({"title": title, "summary": summary})
                 processed_count += 1
 
             except Exception as e:
                 # Log the error with repr() to capture the exact exception class
-                print(f"!Error enriching movie '{title}': {repr(e)}")
+                print(f"!Error enriching movie '{title}': {repr(e)}", flush=True)
                 continue
 
     return {
