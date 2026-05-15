@@ -3,7 +3,7 @@ import logging
 import os
 from typing import Any
 
-import redis
+import redis  # type: ignore[import]
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
