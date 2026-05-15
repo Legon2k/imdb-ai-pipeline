@@ -1,10 +1,10 @@
-# IMDB AI Pipeline: Data Ingestion & Processing
+# IMDB AI Pipeline: Enterprise Data Extraction & Enrichment
 
-A high-performance, distributed data extraction pipeline. It scrapes the IMDb Top 250 chart using asynchronous Playwright, streams the extracted data into a Redis message broker, and processes it asynchronously using a blazing-fast .NET 10 Worker.
+A high-performance, distributed data pipeline. It scrapes the IMDb Top 250 chart using asynchronous Playwright, streams the data into a Redis message broker, processes it asynchronously with a blazing-fast .NET 10 Worker, and uses a FastAPI gateway to enrich the data using Local LLMs (Ollama) and export business reports to Excel.
 
 ## 🏗️ Architecture Overview
 
-This project is built using an Event-Driven ETL (Extract, Transform, Load) architecture:
+This project implements an Event-Driven ETL (Extract, Transform, Load) architecture:
 
 ```mermaid
 graph TD
@@ -41,66 +41,60 @@ graph TD
     style LLM fill:#f4a261,stroke:#fff,stroke-width:2px,color:#000
 ```
 
-1. **Scraper (Python + Playwright):** Extracts raw data from the DOM and pushes JSON payloads to Redis.
+1. **Scraper (Python):** Extracts raw data from the DOM, blocks heavy resources, and pushes JSON payloads to Redis.
 2. **Message Broker (Redis):** Holds the `movies_queue` to ensure zero data loss.
-3. **Background Worker (.NET 10 + Dapper):** Listens to the queue, deserializes payloads, and performs a SQL UPSERT.
-4. **Database (PostgreSQL):** Final persistent storage.
-5. **API Gateway (FastAPI):** Exposes Swagger UI, orchestrates AI enrichment via local LLM (Ollama), and exports data to `.xlsx`.
+3. **Background Worker (.NET 10 + Dapper):** Listens to the queue, deserializes payloads, and performs a SQL UPSERT into the database.
+4. **API Gateway (FastAPI):** Exposes a Swagger UI, orchestrates AI enrichment via local LLM, and generates `.xlsx` reports on the fly.
+5. **Database (PostgreSQL):** Final persistent storage for the movies and AI summaries.
 
 ## 🚀 Quick Start (Docker Compose)
 
-The easiest way to run the entire infrastructure is using Docker Compose.
+The easiest way to run the entire microservice architecture is using Docker Compose.
 
-**1. Start the Infrastructure & Worker**
+**1. Start the Infrastructure, Worker, and API**
 ```bash
-docker compose up -d postgres redis redis-insight worker
+docker compose up -d postgres redis redis-insight worker api
 ```
-*Wait a few seconds for the databases to initialize and the .NET worker to start listening to the queue.*
+*Wait a few seconds for the databases to initialize.*
 
-**2. Monitor the Queue (UI)**
-Open your browser and navigate to **[http://localhost:5540](http://localhost:5540)** (Redis Insight). Connect to the `imdb_redis` host on port `6379` to monitor the data flow in real-time.
+**2. Access the UIs**
+- **Redis Insight:** [http://localhost:5540](http://localhost:5540) (Monitor the message queue)
+- **FastAPI Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs) (API Endpoints)
 
 **3. Run the Scraper (Data Ingestion)**
-Start the extraction process:
 ```bash
 docker compose start scraper
 ```
-The scraper will launch a headless Chromium instance, scrape the movies, push them to the Redis `movies_queue`, and gracefully exit. The `.NET worker` will instantly pick up the payloads and save them to PostgreSQL.
+The scraper will launch a headless Chromium instance, scrape the movies, push them to the Redis queue, and exit. The `.NET worker` will instantly pick up the payloads and save them to PostgreSQL with a `pending` status.
 
-**4. Verify Data in PostgreSQL**
-To see the processed results directly in the database:
-```bash
-docker exec -it imdb_postgres psql -U imdb_admin -d imdb_ai_db -c "SELECT rank, title, rating, status FROM movies ORDER BY rank LIMIT 10;"
-```
+## 🪄 AI Enrichment (Local LLM)
 
-## 💻 Local Development (Python Scraper)
+This pipeline integrates with local LLMs running on your host machine (e.g., Ollama with the `gemma4:e4b` model) to generate engaging summaries for the scraped movies.
 
-If you want to run the scraper outside of Docker, ensure your virtual environment is set up and the infrastructure is running.
-
+**1. Start Ollama on your host machine:**
+Ensure Ollama is listening on all interfaces so the Docker container can reach it. Using PowerShell:
 ```powershell
-pip install -r src/scraper_python/requirements.txt
-python -m playwright install chromium
-
-python src/scraper_python/src/imdb_top.py --limit 10
+$env:OLLAMA_HOST="0.0.0.0"; ollama run gemma4:e4b
 ```
 
-### Supported CLI Arguments
+**2. Trigger the Enrichment API:**
+Go to the Swagger UI ([http://localhost:8000/docs](http://localhost:8000/docs)), open the `POST /movies/enrich` endpoint, set a limit, and execute. The API will fetch pending movies, generate summaries via Ollama, and update their status to `completed`.
 
-- `--limit 10`: Scrape only a specific number of movies.
-- `--retries 5 --log-level DEBUG`: Retry failed scrapes and adjust verbosity.
-- `--timeout 90 --locale en-US --user-agent "Mozilla/5.0 ..."`: Adjust page timeout, locale, or user agent.
-- `--no-images`: Omit poster image URLs to save bandwidth.
+## 📊 Excel Export
+
+Business users can download a complete report containing movie data and AI-generated summaries in Excel format (`.xlsx`) by navigating to:
+[http://localhost:8000/movies/export](http://localhost:8000/movies/export)
 
 ## 📦 Message Payload Format (Redis)
 
-The scraper publishes a JSON object to the `movies_queue` list in Redis for each extracted movie. The .NET Worker deserializes this payload and saves it to PostgreSQL.
+The scraper publishes a JSON object to the `movies_queue` list in Redis. The .NET Worker deserializes this payload:
 
 ```json
 {
   "rank": 1,
   "imdb_id": "tt0111161",
   "title": "The Shawshank Redemption",
-  "imdb_url": "https://www.imdb.com/title/tt0111161/?ref_=chttp_t_1",
+  "imdb_url": "https://www.imdb.com/title/tt0111161/",
   "image_url": "https://m.media-amazon.com/images/...",
   "rating": 9.3,
   "votes": "3.2M",
@@ -108,9 +102,19 @@ The scraper publishes a JSON object to the `movies_queue` list in Redis for each
 }
 ```
 
+## 💻 Local Development (Python Scraper)
+
+To run the scraper manually without Docker:
+```powershell
+pip install -r src/scraper_python/requirements.txt
+python -m playwright install chromium
+
+python src/scraper_python/src/imdb_top.py --limit 10
+```
+
 ## 🧪 Tests & Code Quality
 
-Run Python tests:
+Run tests:
 ```powershell
 python -m unittest discover -s src/scraper_python/tests
 ```
@@ -120,11 +124,3 @@ Run Ruff linting and formatting:
 ruff check .
 ruff format .
 ```
-
-## 📈 CI / CD
-
-GitHub Actions automatically runs Ruff, unit tests, and Docker builds on push and pull requests to ensure code quality.
-
-## 🗺️ Diagrams
-
-System architecture diagrams can be found in `docs/architecture.drawio` and can be edited using [Draw.io](https://www.drawio.com/).
