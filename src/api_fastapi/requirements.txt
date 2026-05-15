@@ -1,0 +1,5 @@
+fastapi==0.111.0
+uvicorn==0.29.0
+asyncpg==0.29.0       # Blazing fast async PostgreSQL driver
+pandas==2.2.2         # For data manipulation
+openpyxl==3.1.2       # Engine for creating .xlsx files

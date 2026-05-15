@@ -90,6 +90,25 @@ services:
     networks:
       - internal_network
 
+# ==========================================
+  # 4. API GATEWAY (FastAPI)
+  # ==========================================
+  api:
+    container_name: imdb_api
+    build: 
+      context: ./src/api_fastapi
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal_network
+      
 networks:
   internal_network:
     driver: bridge
