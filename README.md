@@ -4,7 +4,7 @@ A high-performance, distributed data pipeline. It scrapes the IMDb Top 250 chart
 
 ## 🏗️ Architecture Overview
 
-This project implements a fully decoupled Event-Driven ETL (Extract, Transform, Load) architecture with asynchronous task queues:
+This project implements a fully decoupled Event-Driven ETL (Extract, Transform, Load) architecture with isolated asynchronous task queues:
 
 ```mermaid
 graph TD
@@ -12,23 +12,24 @@ graph TD
     Client([Business Client])
     IMDB[IMDB Website]
     Scraper(Python + Playwright<br/>Data Producer)
-    Redis[(Redis<br/>Message Broker)]
+    RedisMovies[(Redis Broker<br/>'movies_queue')]
     WorkerNET(.NET 10 Worker<br/>Data Consumer)
     DB[(PostgreSQL<br/>Persistent Storage)]
     API(FastAPI<br/>API Gateway)
+    RedisAI[(Redis Broker<br/>'ai_queue')]
     WorkerAI(Python AI Worker<br/>LLM Consumer)
     LLM{{Local LLM<br/>Ollama / Gemma}}
 
     %% Define Flow
     IMDB -- 1. Scrape DOM --> Scraper
-    Scraper -- 2. Push JSON --> Redis
-    Redis -- 3. Pop (movies_queue) --> WorkerNET
+    Scraper -- 2. Push JSON --> RedisMovies
+    RedisMovies -- 3. Pop (FIFO) --> WorkerNET
     WorkerNET -- 4. Upsert (Pending) --> DB
     
     Client -- 5. Trigger Enrichment --> API
     API -- 6. Fetch Pending --> DB
-    API -- 7. Push Tasks --> Redis
-    Redis -- 8. Pop (ai_queue) --> WorkerAI
+    API -- 7. Push Tasks --> RedisAI
+    RedisAI -- 8. Pop (FIFO) --> WorkerAI
     WorkerAI -- 9. Prompt --> LLM
     LLM -- 10. Summary --> WorkerAI
     WorkerAI -- 11. Update (Completed) --> DB
@@ -37,7 +38,8 @@ graph TD
 
     %% Styling
     style Scraper fill:#3776ab,stroke:#fff,stroke-width:2px,color:#fff
-    style Redis fill:#dc382d,stroke:#fff,stroke-width:2px,color:#fff
+    style RedisMovies fill:#dc382d,stroke:#fff,stroke-width:2px,color:#fff
+    style RedisAI fill:#dc382d,stroke:#fff,stroke-width:2px,color:#fff
     style WorkerNET fill:#512bd4,stroke:#fff,stroke-width:2px,color:#fff
     style DB fill:#336791,stroke:#fff,stroke-width:2px,color:#fff
     style API fill:#009688,stroke:#fff,stroke-width:2px,color:#fff
@@ -47,10 +49,10 @@ graph TD
 
 ### Components:
 1. **Scraper (Python):** Extracts raw data from the DOM, blocks heavy resources, and pushes payloads to the `movies_queue`.
-2. **Message Broker (Redis):** Holds queues (`movies_queue` and `ai_queue`) to ensure zero data loss and enable asynchronous processing.
+2. **Message Broker (Redis):** Holds isolated queues (`movies_queue` and `ai_queue`) to ensure zero data loss and enable asynchronous processing.
 3. **Data Worker (.NET 10 + Dapper):** Listens to `movies_queue`, deserializes payloads, and performs a SQL UPSERT into PostgreSQL.
-4. **API Gateway (FastAPI):** Exposes Swagger UI, exports `.xlsx` reports, and pushes AI tasks to the message broker.
-5. **AI Worker (Python):** A dedicated background worker listening to `ai_queue`. It communicates with the Local LLM one by one to prevent VRAM Out-Of-Memory (OOM) errors and timeouts.
+4. **API Gateway (FastAPI):** Exposes Swagger UI, exports `.xlsx` reports, and pushes AI tasks to the `ai_queue`.
+5. **AI Worker (Python):** A dedicated background worker listening to `ai_queue`. It communicates with the Local LLM one-by-one to prevent VRAM Out-Of-Memory (OOM) errors and timeouts.
 6. **Database (PostgreSQL):** Final persistent storage for movies and AI summaries.
 
 ## 🚀 Quick Start (Docker Compose)
