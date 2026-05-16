@@ -4,7 +4,7 @@ A high-performance, distributed data pipeline. It scrapes the IMDb Top 250 chart
 
 ## 🏗️ Architecture Overview
 
-This project implements a fully decoupled Event-Driven ETL (Extract, Transform, Load) architecture with isolated asynchronous task queues:
+This project implements a fully decoupled Event-Driven ETL (Extract, Transform, Load) architecture with isolated asynchronous task queues, strict Pydantic Data Contracts, and Self-Healing capabilities:
 
 ```mermaid
 graph TD
@@ -52,9 +52,15 @@ graph TD
 1. **Scraper (Python):** Extracts raw data from the DOM, blocks heavy resources, and pushes payloads to the `movies_queue`.
 2. **Message Broker (Redis):** Holds isolated queues (`movies_queue` and `ai_queue`) to ensure zero data loss and enable asynchronous processing.
 3. **Data Worker (.NET 10 + Dapper):** Listens to `movies_queue`, deserializes payloads, and performs a SQL UPSERT into PostgreSQL.
-4. **API Gateway (FastAPI):** Exposes Swagger UI with strictly typed response schemas via `Pydantic`, exports `.xlsx` reports, locks records, and pushes AI tasks to the `ai_queue`.
+4. **API Gateway (FastAPI):** Exposes Swagger UI with strictly typed response schemas via `Pydantic`, exports `.xlsx` reports, locks records (sets status to `processing`), and pushes AI tasks to the `ai_queue`.
 5. **AI Worker (Python):** A dedicated background worker listening to `ai_queue`. It validates incoming tasks using strict `Pydantic` Data Contracts and communicates with the Local LLM one-by-one to prevent VRAM Out-Of-Memory (OOM) errors.
 6. **Database (PostgreSQL):** Final persistent storage for movies and AI summaries.
+
+### Enterprise Features:
+1. **Asynchronous Producers & Consumers:** Data is scraped, buffered in Redis, and consumed by isolated background workers to prevent bottlenecks.
+2. **Strict Data Contracts:** JSON payloads are validated across microservices using `Pydantic` to prevent silent failures and corrupt data injection.
+3. **Self-Healing System:** Solves the "Zombie Task" problem. If the Local LLM crashes or times out, the system automatically catches the exception, unlocks the record, and resets its status to `pending` for future retries.
+4. **VRAM Protection:** AI enrichment is offloaded to a dedicated queue, processing prompts one-by-one to prevent Local LLM Out-Of-Memory (OOM) crashes.
 
 ## 🚀 Quick Start (Docker Compose)
 
@@ -64,7 +70,6 @@ The easiest way to run the entire microservice architecture is using Docker Comp
 ```bash
 docker compose up -d postgres redis redis-insight worker api worker_ai
 ```
-*Wait a few seconds for the databases to initialize.*
 
 **2. Access the UIs**
 - **Redis Insight:** [http://localhost:5540](http://localhost:5540) (Monitor the message queues)
@@ -74,36 +79,28 @@ docker compose up -d postgres redis redis-insight worker api worker_ai
 ```bash
 docker compose start scraper
 ```
-The scraper will push data to the queue, and the `.NET worker` will instantly pick up the payloads and save them to PostgreSQL with a `pending` status.
+The `.NET worker` will instantly pick up the payloads from Redis and save them to PostgreSQL with a `pending` status.
 
-## 🪄 AI Enrichment (Local LLM)
+## 🪄 AI Enrichment (Local LLM) & Self-Healing
 
-This pipeline integrates with local LLMs running on your host machine (e.g., Ollama with the `gemma4:e4b` model) using an asynchronous job queue.
+Integrates with local LLMs (e.g., Ollama with the `gemma4:e4b` model) using an asynchronous job queue.
 
 **1. Start Ollama on your host machine:**
-Ensure Ollama is listening on all interfaces so the Docker container can reach it. Using PowerShell:
+Using PowerShell, ensure Ollama listens on all interfaces:
 ```powershell
 $env:OLLAMA_HOST="0.0.0.0"; ollama run gemma4:e4b
 ```
 
 **2. Trigger the Enrichment API:**
-Go to the Swagger UI ([http://localhost:8000/docs](http://localhost:8000/docs)), open the `POST /movies/enrich` endpoint, and execute. 
-*Note: The API returns `HTTP 202 Accepted` instantly. The dedicated AI Worker processes the tasks in the background and updates the database.*
+Open the Swagger UI, navigate to `POST /movies/enrich`, and execute. The API returns `HTTP 202 Accepted` instantly while the AI Worker handles generation in the background.
+
+**3. Recover Stuck Tasks (Self-Healing):**
+If the host machine loses power or the LLM crashes, you can recover stuck tasks via the `POST /movies/recover` endpoint. It scans the database for zombie processes and safely reverts them to `pending`.
 
 ## 📊 Excel Export
 
 Business users can download a complete report containing movie data and AI-generated summaries in Excel format (`.xlsx`) by navigating to:
 [http://localhost:8000/movies/export](http://localhost:8000/movies/export)
-
-## 💻 Local Development (Python Scraper)
-
-To run the scraper manually without Docker:
-```powershell
-pip install -r src/scraper_python/requirements.txt
-python -m playwright install chromium
-
-python src/scraper_python/src/imdb_top.py --limit 10
-```
 
 ## 🧪 Tests & Code Quality
 

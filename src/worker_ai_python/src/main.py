@@ -1,5 +1,3 @@
-# --- START OF FILE main.py ---
-
 import asyncio
 import os
 import httpx
@@ -43,7 +41,7 @@ async def main():
         user=PG_USER, password=PG_PASS, database=PG_DB, host=PG_HOST, port=5432
     )
 
-    # Create persistent HTTP client for LLM
+    # Create persistent HTTP client for LLM (No timeout for local LLMs as they can take time)
     async with httpx.AsyncClient(timeout=None) as http_client:
         while True:
             try:
@@ -65,7 +63,6 @@ async def main():
                     )
                     continue  # Skip invalid payloads
 
-                # Now we use dot notation (task.title) instead of dictionary lookup (task["title"])
                 print(
                     f"[{task.rank}/250] Generating AI summary for '{task.title}'...",
                     flush=True,
@@ -91,7 +88,27 @@ async def main():
 
             except Exception as e:
                 print(f"! Error processing AI task: {repr(e)}", flush=True)
-                await asyncio.sleep(5)  # Delay on error to prevent spamming
+
+                # ---> SAFEGUARD / SELF-HEALING <---
+                # Revert the status in the database so it's not locked forever as a 'zombie' task
+                if "task" in locals():
+                    try:
+                        async with db_pool.acquire() as conn:
+                            await conn.execute(
+                                "UPDATE movies SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE id = $1;",
+                                task.id,
+                            )
+                        print(
+                            f"[*] Reverted '{task.title}' back to 'pending' status for future retries.",
+                            flush=True,
+                        )
+                    except Exception as db_err:
+                        print(
+                            f"! Failed to revert status in DB: {repr(db_err)}",
+                            flush=True,
+                        )
+
+                await asyncio.sleep(5)  # Delay on error to prevent API spamming
 
 
 if __name__ == "__main__":

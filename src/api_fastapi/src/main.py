@@ -1,23 +1,23 @@
-from pydantic import BaseModel
-from datetime import datetime
-
 import io
 import json
 import os
 from contextlib import asynccontextmanager
-from typing import List
+from typing import List, Dict, Any
+from datetime import datetime
 
 import asyncpg
 import pandas as pd
 import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 # Global variables to hold our connections
 db_pool = None
 redis_client = None
 
 
+# --- API DATA CONTRACTS (Pydantic) ---
 class MovieResponse(BaseModel):
     """Data contract for the API response."""
 
@@ -34,6 +34,11 @@ class MovieResponse(BaseModel):
 class EnrichmentResponse(BaseModel):
     message: str
     queued_tasks: int
+
+
+class RecoverResponse(BaseModel):
+    message: str
+    recovered_movies: List[Dict[str, Any]]
 
 
 @asynccontextmanager
@@ -68,8 +73,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="IMDB AI Pipeline API",
-    description="API Gateway for accessing processed IMDB movie data and triggering AI tasks.",
-    version="2.0.0",
+    description="API Gateway for accessing processed IMDB movie data, triggering AI tasks, and self-healing.",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
@@ -81,6 +86,9 @@ app = FastAPI(
     response_model=List[MovieResponse],
 )
 async def get_movies(limit: int = 50, offset: int = 0):
+    """
+    Retrieves a list of processed movies from the PostgreSQL database.
+    """
     if not db_pool:
         raise HTTPException(
             status_code=500, detail="Database connection is not initialized."
@@ -98,6 +106,10 @@ async def get_movies(limit: int = 50, offset: int = 0):
 
 @app.get("/movies/export", summary="Export movies to Excel", tags=["Export"])
 async def export_movies_to_excel():
+    """
+    Generates an Excel (.xlsx) file on the fly containing all scraped movies,
+    including the AI-generated summaries. Perfect for business clients.
+    """
     if not db_pool:
         raise HTTPException(
             status_code=500, detail="Database connection is not initialized."
@@ -136,15 +148,52 @@ async def export_movies_to_excel():
 
 
 @app.post(
+    "/movies/recover",
+    summary="Recover stuck processing tasks",
+    tags=["System Maintenance"],
+    response_model=RecoverResponse,
+)
+async def recover_stuck_movies(stuck_minutes: int = 10):
+    """
+    Scans the database for movies that have been in the 'processing' state
+    for longer than the specified time (default 10 minutes) and resets them
+    to 'pending' so they can be picked up again by the AI enrichment trigger.
+    """
+    if not db_pool:
+        raise HTTPException(
+            status_code=500, detail="Database connection is not initialized."
+        )
+
+    recover_query = f"""
+        UPDATE movies 
+        SET status = 'pending', updated_at = CURRENT_TIMESTAMP
+        WHERE status = 'processing' 
+        AND updated_at < CURRENT_TIMESTAMP - INTERVAL '{stuck_minutes} minutes'
+        RETURNING id, title;
+    """
+
+    async with db_pool.acquire() as connection:
+        recovered_records = await connection.fetch(recover_query)
+
+    recovered_count = len(recovered_records)
+
+    return {
+        "message": f"Successfully recovered {recovered_count} stuck tasks.",
+        "recovered_movies": [dict(r) for r in recovered_records],
+    }
+
+
+@app.post(
     "/movies/enrich",
     status_code=202,
-    summary="Trigger AI Enrichment",
+    summary="Trigger AI Enrichment (Async)",
     tags=["AI Enrichment"],
     response_model=EnrichmentResponse,
 )
 async def enrich_movies(limit: int = 5):
     """
-    Finds 'pending' movies and queues them in Redis for the AI background worker.
+    Finds 'pending' movies, updates their status to 'processing' to lock them,
+    and queues them in Redis for the AI background worker.
     Returns HTTP 202 Accepted instantly.
     """
     if not db_pool or not redis_client:
@@ -152,33 +201,31 @@ async def enrich_movies(limit: int = 5):
             status_code=500, detail="Infrastructure connections are not ready."
         )
 
-    # 1. Fetch pending movies
     select_query = "SELECT id, rank, title, rating FROM movies WHERE status = 'pending' ORDER BY rank ASC LIMIT $1;"
     async with db_pool.acquire() as connection:
         pending_movies = await connection.fetch(select_query, limit)
 
     if not pending_movies:
-        return {"message": "No pending movies found.", "queued_tasks": 0}
+        return {"message": "No pending movies found to enrich.", "queued_tasks": 0}
 
     queued_count = 0
     async with db_pool.acquire() as connection:
         for movie in pending_movies:
-            # 2. Build the task payload
+            # Build the task payload and explicitly cast Decimal to float for JSON serialization
             task = {
                 "id": movie["id"],
                 "rank": movie["rank"],
                 "title": movie["title"],
-                "rating": float(
-                    movie["rating"]
-                ),  # <--- explicitly cast Decimal to float
+                "rating": float(movie["rating"]),
             }
 
-            # 3. Push to Redis queue
+            # Push to Redis queue
             await redis_client.lpush("ai_queue", json.dumps(task))
 
-            # 4. Update status to 'processing' so it doesn't get queued twice
+            # Update status to 'processing' to lock the record
             await connection.execute(
-                "UPDATE movies SET status = 'processing' WHERE id = $1;", movie["id"]
+                "UPDATE movies SET status = 'processing', updated_at = CURRENT_TIMESTAMP WHERE id = $1;",
+                movie["id"],
             )
             queued_count += 1
 
