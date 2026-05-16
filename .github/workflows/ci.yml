@@ -1,8 +1,11 @@
-name: CI
+# --- START OF FILE ci.yml ---
+name: CI Pipeline
 
 on:
   push:
+    branches: [ "main" ]
   pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
     inputs:
       logLevel:
@@ -11,12 +14,11 @@ on:
         default: 'warning'
 
 jobs:
-  python:
-    name: Python checks
+  python-checks:
+    name: Python Lint & Tests
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -38,16 +40,34 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s src/scraper_python/tests -t src/scraper_python
 
-  docker:
-    name: Docker smoke build
+  dotnet-checks:
+    name: .NET 10 Build Check
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: docker build -t imdb-top250-scraper -f src/scraper_python/Dockerfile src/scraper_python
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          # Essential for downloading Preview versions on GitHub Actions
+          include-prerelease: true
 
-      - name: Inspect Docker image
-        run: docker image inspect imdb-top250-scraper
+      - name: Restore dependencies
+        run: dotnet restore src/worker_dotnet/ImdbWorker.slnx
+
+      - name: Build Solution
+        run: dotnet build src/worker_dotnet/ImdbWorker.slnx --no-restore --configuration Release
+
+  docker-smoke-test:
+    name: Docker Compose Build Validation
+    runs-on: ubuntu-latest
+    # Wait for code checks to pass before building heavy Docker images
+    needs: [python-checks, dotnet-checks]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build entire microservice infrastructure
+        # This single
