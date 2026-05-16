@@ -51,7 +51,7 @@ graph TD
 1. **Scraper (Python):** Extracts raw data from the DOM, blocks heavy resources, and pushes payloads to the `movies_queue`.
 2. **Message Broker (Redis):** Holds isolated queues (`movies_queue` and `ai_queue`) to buffer work and enable asynchronous processing.
 3. **Data Worker (.NET 10 + Dapper):** Listens to `movies_queue`, deserializes payloads, and performs a SQL UPSERT into PostgreSQL.
-4. **API Gateway (FastAPI):** Exposes Swagger UI with strictly typed response schemas via `Pydantic`, exports `.xlsx` reports, atomically locks records with `FOR UPDATE SKIP LOCKED`, and pushes AI tasks to the `ai_queue`.
+4. **API Gateway (FastAPI):** Exposes Swagger UI with strictly typed response schemas via `Pydantic`, exports `.xlsx` reports, provides health/readiness probes, atomically locks records with `FOR UPDATE SKIP LOCKED`, and pushes AI tasks to the `ai_queue`.
 5. **AI Worker (Python):** A dedicated background worker listening to `ai_queue`. It validates incoming tasks using strict `Pydantic` Data Contracts and communicates with the Local LLM one-by-one with a bounded request timeout to prevent indefinite hangs.
 6. **Database (PostgreSQL):** Final persistent storage for movies and AI summaries.
 
@@ -60,7 +60,8 @@ graph TD
 2. **Strict Data Contracts:** JSON payloads are validated across microservices using `Pydantic` to prevent silent failures and corrupt data injection.
 3. **Self-Healing System:** Solves the "Zombie Task" problem. If the Local LLM crashes or times out, the system automatically catches the exception, unlocks the record, and resets its status to `pending` for future retries.
 4. **Concurrency-Safe Enrichment:** The enrichment endpoint locks `pending` rows with PostgreSQL `FOR UPDATE SKIP LOCKED`, so overlapping API requests do not queue the same movies twice.
-5. **VRAM Protection:** AI enrichment is offloaded to a dedicated queue, processing prompts one-by-one to prevent Local LLM Out-Of-Memory (OOM) crashes.
+5. **Operational Probes:** The API exposes `/health` for liveness and `/ready` for PostgreSQL/Redis readiness checks.
+6. **VRAM Protection:** AI enrichment is offloaded to a dedicated queue, processing prompts one-by-one to prevent Local LLM Out-Of-Memory (OOM) crashes.
 
 ## 🚀 Quick Start (Docker Compose)
 
@@ -74,6 +75,8 @@ docker compose up -d postgres redis redis-insight worker api worker_ai
 **2. Access the UIs**
 - **Redis Insight:** [http://localhost:5540](http://localhost:5540) (Monitor the message queues)
 - **FastAPI Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs) (API Endpoints)
+- **API Health:** [http://localhost:8000/health](http://localhost:8000/health)
+- **API Readiness:** [http://localhost:8000/ready](http://localhost:8000/ready)
 
 **3. Run the Scraper (Data Ingestion)**
 ```bash

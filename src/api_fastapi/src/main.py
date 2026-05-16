@@ -41,6 +41,16 @@ class RecoverResponse(BaseModel):
     recovered_movies: List[Dict[str, Any]]
 
 
+class HealthResponse(BaseModel):
+    status: str
+
+
+class ReadinessResponse(BaseModel):
+    status: str
+    postgres: str
+    redis: str
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -77,6 +87,46 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan,
 )
+
+
+@app.get(
+    "/health",
+    summary="API liveness check",
+    tags=["Health"],
+    response_model=HealthResponse,
+)
+async def health_check():
+    """
+    Reports whether the API process is running.
+    """
+    return {"status": "ok"}
+
+
+@app.get(
+    "/ready",
+    summary="API readiness check",
+    tags=["Health"],
+    response_model=ReadinessResponse,
+)
+async def readiness_check():
+    """
+    Verifies that the API can reach its required infrastructure dependencies.
+    """
+    if not db_pool or not redis_client:
+        raise HTTPException(
+            status_code=503, detail="Infrastructure connections are not initialized."
+        )
+
+    try:
+        async with db_pool.acquire() as connection:
+            await connection.fetchval("SELECT 1;")
+        await redis_client.ping()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"Infrastructure dependency check failed: {exc!r}"
+        ) from exc
+
+    return {"status": "ready", "postgres": "ok", "redis": "ok"}
 
 
 @app.get(
