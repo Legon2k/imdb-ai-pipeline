@@ -1,4 +1,3 @@
-# --- START OF FILE ci.yml ---
 name: CI Pipeline
 
 on:
@@ -51,7 +50,6 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-          # Essential for downloading Preview versions on GitHub Actions
           include-prerelease: true
 
       - name: Restore dependencies
@@ -63,11 +61,10 @@ jobs:
   docker-smoke-test:
     name: Docker Compose Build Validation
     runs-on: ubuntu-latest
-    # Wait for code checks to pass before building heavy Docker images
     needs: [python-checks, dotnet-checks]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Build entire microservice infrastructure
-        # This single
+        run: docker compose build
