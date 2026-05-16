@@ -14,6 +14,7 @@ PG_DB = os.getenv("POSTGRES_DB", "imdb_ai_db")
 PG_HOST = os.getenv("POSTGRES_HOST", "localhost")
 LLM_URL = os.getenv("LLM_API_URL", "http://host.docker.internal:11434/api/generate")
 LLM_MODEL = os.getenv("LLM_MODEL_NAME", "gemma:4b")
+LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
 QUEUE_NAME = "ai_queue"
 
 
@@ -41,9 +42,11 @@ async def main():
         user=PG_USER, password=PG_PASS, database=PG_DB, host=PG_HOST, port=5432
     )
 
-    # Create persistent HTTP client for LLM (No timeout for local LLMs as they can take time)
-    async with httpx.AsyncClient(timeout=None) as http_client:
+    # Local LLMs can be slow, but each request still needs an upper bound.
+    timeout = httpx.Timeout(LLM_TIMEOUT_SECONDS, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as http_client:
         while True:
+            task: AITaskContract | None = None
             try:
                 # BRPOP blocks until a message is available (0 = wait forever)
                 result = await redis_client.brpop(QUEUE_NAME, timeout=0)
@@ -76,6 +79,8 @@ async def main():
                 response.raise_for_status()
 
                 summary = response.json().get("response", "").strip()
+                if not summary:
+                    raise RuntimeError("LLM returned an empty summary.")
 
                 # Update DB to 'completed'
                 async with db_pool.acquire() as conn:
@@ -91,7 +96,7 @@ async def main():
 
                 # ---> SAFEGUARD / SELF-HEALING <---
                 # Revert the status in the database so it's not locked forever as a 'zombie' task
-                if "task" in locals():
+                if task is not None:
                     try:
                         async with db_pool.acquire() as conn:
                             await conn.execute(

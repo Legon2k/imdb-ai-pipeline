@@ -8,7 +8,7 @@ from datetime import datetime
 import asyncpg
 import pandas as pd
 import redis.asyncio as redis
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -153,7 +153,7 @@ async def export_movies_to_excel():
     tags=["System Maintenance"],
     response_model=RecoverResponse,
 )
-async def recover_stuck_movies(stuck_minutes: int = 10):
+async def recover_stuck_movies(stuck_minutes: int = Query(default=10, ge=1, le=1440)):
     """
     Scans the database for movies that have been in the 'processing' state
     for longer than the specified time (default 10 minutes) and resets them
@@ -164,16 +164,16 @@ async def recover_stuck_movies(stuck_minutes: int = 10):
             status_code=500, detail="Database connection is not initialized."
         )
 
-    recover_query = f"""
+    recover_query = """
         UPDATE movies 
         SET status = 'pending', updated_at = CURRENT_TIMESTAMP
         WHERE status = 'processing' 
-        AND updated_at < CURRENT_TIMESTAMP - INTERVAL '{stuck_minutes} minutes'
+        AND updated_at < CURRENT_TIMESTAMP - make_interval(mins => $1)
         RETURNING id, title;
     """
 
     async with db_pool.acquire() as connection:
-        recovered_records = await connection.fetch(recover_query)
+        recovered_records = await connection.fetch(recover_query, stuck_minutes)
 
     recovered_count = len(recovered_records)
 
@@ -190,7 +190,7 @@ async def recover_stuck_movies(stuck_minutes: int = 10):
     tags=["AI Enrichment"],
     response_model=EnrichmentResponse,
 )
-async def enrich_movies(limit: int = 5):
+async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
     """
     Finds 'pending' movies, updates their status to 'processing' to lock them,
     and queues them in Redis for the AI background worker.
@@ -201,35 +201,59 @@ async def enrich_movies(limit: int = 5):
             status_code=500, detail="Infrastructure connections are not ready."
         )
 
-    select_query = "SELECT id, rank, title, rating FROM movies WHERE status = 'pending' ORDER BY rank ASC LIMIT $1;"
+    lock_query = """
+        WITH selected AS (
+            SELECT id, rank, title, rating
+            FROM movies
+            WHERE status = 'pending'
+            ORDER BY rank ASC
+            LIMIT $1
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE movies AS m
+        SET status = 'processing', updated_at = CURRENT_TIMESTAMP
+        FROM selected
+        WHERE m.id = selected.id
+        RETURNING m.id, m.rank, m.title, m.rating;
+    """
     async with db_pool.acquire() as connection:
-        pending_movies = await connection.fetch(select_query, limit)
+        async with connection.transaction():
+            pending_movies = await connection.fetch(lock_query, limit)
 
     if not pending_movies:
         return {"message": "No pending movies found to enrich.", "queued_tasks": 0}
 
-    queued_count = 0
-    async with db_pool.acquire() as connection:
-        for movie in pending_movies:
-            # Build the task payload and explicitly cast Decimal to float for JSON serialization
-            task = {
+    tasks = [
+        json.dumps(
+            {
                 "id": movie["id"],
                 "rank": movie["rank"],
                 "title": movie["title"],
                 "rating": float(movie["rating"]),
             }
+        )
+        for movie in pending_movies
+    ]
+    movie_ids = [movie["id"] for movie in pending_movies]
 
-            # Push to Redis queue
-            await redis_client.lpush("ai_queue", json.dumps(task))
-
-            # Update status to 'processing' to lock the record
+    try:
+        await redis_client.lpush("ai_queue", *tasks)
+    except Exception as exc:
+        async with db_pool.acquire() as connection:
             await connection.execute(
-                "UPDATE movies SET status = 'processing', updated_at = CURRENT_TIMESTAMP WHERE id = $1;",
-                movie["id"],
+                """
+                UPDATE movies
+                SET status = 'pending', updated_at = CURRENT_TIMESTAMP
+                WHERE id = ANY($1::int[]);
+                """,
+                movie_ids,
             )
-            queued_count += 1
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to queue AI enrichment tasks. Movie locks were reverted.",
+        ) from exc
 
     return {
         "message": "AI enrichment tasks successfully added to the background queue.",
-        "queued_tasks": queued_count,
+        "queued_tasks": len(tasks),
     }

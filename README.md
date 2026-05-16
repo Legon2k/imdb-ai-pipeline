@@ -27,9 +27,8 @@ graph TD
     WorkerNET -- 4. Upsert (Pending) --> DB
     
     Client -- 5. Trigger Enrichment --> API
-    API -- 6. Fetch (Pending) --> DB
-    API -- 7. Set Status (Processing) --> DB
-    API -- 8. Push Tasks --> RedisAI
+    API -- 6. Lock Pending<br/>SKIP LOCKED --> DB
+    API -- 7. Push Tasks --> RedisAI
     RedisAI -- 9. Pop (FIFO) --> WorkerAI
     WorkerAI -- 10. Prompt --> LLM
     LLM -- 11. Summary --> WorkerAI
@@ -50,17 +49,18 @@ graph TD
 
 ### Components:
 1. **Scraper (Python):** Extracts raw data from the DOM, blocks heavy resources, and pushes payloads to the `movies_queue`.
-2. **Message Broker (Redis):** Holds isolated queues (`movies_queue` and `ai_queue`) to ensure zero data loss and enable asynchronous processing.
+2. **Message Broker (Redis):** Holds isolated queues (`movies_queue` and `ai_queue`) to buffer work and enable asynchronous processing.
 3. **Data Worker (.NET 10 + Dapper):** Listens to `movies_queue`, deserializes payloads, and performs a SQL UPSERT into PostgreSQL.
-4. **API Gateway (FastAPI):** Exposes Swagger UI with strictly typed response schemas via `Pydantic`, exports `.xlsx` reports, locks records (sets status to `processing`), and pushes AI tasks to the `ai_queue`.
-5. **AI Worker (Python):** A dedicated background worker listening to `ai_queue`. It validates incoming tasks using strict `Pydantic` Data Contracts and communicates with the Local LLM one-by-one to prevent VRAM Out-Of-Memory (OOM) errors.
+4. **API Gateway (FastAPI):** Exposes Swagger UI with strictly typed response schemas via `Pydantic`, exports `.xlsx` reports, atomically locks records with `FOR UPDATE SKIP LOCKED`, and pushes AI tasks to the `ai_queue`.
+5. **AI Worker (Python):** A dedicated background worker listening to `ai_queue`. It validates incoming tasks using strict `Pydantic` Data Contracts and communicates with the Local LLM one-by-one with a bounded request timeout to prevent indefinite hangs.
 6. **Database (PostgreSQL):** Final persistent storage for movies and AI summaries.
 
 ### Enterprise Features:
 1. **Asynchronous Producers & Consumers:** Data is scraped, buffered in Redis, and consumed by isolated background workers to prevent bottlenecks.
 2. **Strict Data Contracts:** JSON payloads are validated across microservices using `Pydantic` to prevent silent failures and corrupt data injection.
 3. **Self-Healing System:** Solves the "Zombie Task" problem. If the Local LLM crashes or times out, the system automatically catches the exception, unlocks the record, and resets its status to `pending` for future retries.
-4. **VRAM Protection:** AI enrichment is offloaded to a dedicated queue, processing prompts one-by-one to prevent Local LLM Out-Of-Memory (OOM) crashes.
+4. **Concurrency-Safe Enrichment:** The enrichment endpoint locks `pending` rows with PostgreSQL `FOR UPDATE SKIP LOCKED`, so overlapping API requests do not queue the same movies twice.
+5. **VRAM Protection:** AI enrichment is offloaded to a dedicated queue, processing prompts one-by-one to prevent Local LLM Out-Of-Memory (OOM) crashes.
 
 ## 🚀 Quick Start (Docker Compose)
 
@@ -92,10 +92,13 @@ $env:OLLAMA_HOST="0.0.0.0"; ollama run gemma4:e4b
 ```
 
 **2. Trigger the Enrichment API:**
-Open the Swagger UI, navigate to `POST /movies/enrich`, and execute. The API returns `HTTP 202 Accepted` instantly while the AI Worker handles generation in the background.
+Open the Swagger UI, navigate to `POST /movies/enrich`, and execute. The API locks a batch of `pending` movies, queues them for the AI Worker, and returns `HTTP 202 Accepted` while generation continues in the background.
 
 **3. Recover Stuck Tasks (Self-Healing):**
-If the host machine loses power or the LLM crashes, you can recover stuck tasks via the `POST /movies/recover` endpoint. It scans the database for zombie processes and safely reverts them to `pending`.
+If the host machine loses power or the LLM crashes, you can recover stuck tasks via the `POST /movies/recover` endpoint. It scans the database for zombie processes and safely reverts them to `pending`. The `stuck_minutes` parameter is validated and passed to PostgreSQL as a query parameter.
+
+**4. Tune LLM Timeout:**
+Set `LLM_TIMEOUT_SECONDS` in `.env` to control the maximum duration of a single Ollama generation request. The default is `600` seconds.
 
 ## 📊 Excel Export
 

@@ -1,7 +1,7 @@
 [project]
 name = "imdb-top250-scraper"
 version = "0.1.0"
-description = "Scrape the IMDb Top 250 chart and save it as JSON or JSON Lines."
+description = "Scrape the IMDb Top 250 chart and publish movie payloads to Redis."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

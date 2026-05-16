@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-05-16
+### Reliability Hardening
+- **Changed:** `POST /movies/enrich` now locks pending rows with PostgreSQL `FOR UPDATE SKIP LOCKED` before queueing AI tasks, preventing duplicate queueing during overlapping enrichment requests.
+- **Fixed:** `POST /movies/recover` now uses a parameterized interval query and validates `stuck_minutes`.
+- **Fixed:** AI Worker task recovery no longer relies on `locals()`, preventing an older task from being reverted after an unrelated failure.
+- **Added:** Configurable `LLM_TIMEOUT_SECONDS` to bound local LLM requests and avoid indefinite hangs.
+- **Removed:** Legacy scraper JSON/JSONL output module, schema files, and output-format tests after the pipeline moved to Redis-based ingestion.
+
 ## [0.5.0] - 2026-05-16
 ### 🛡️ Resilience & Self-Healing (Fault Tolerance)
 - **Added:** Implemented a "Self-Healing" mechanism to resolve the "Zombie Task" problem in distributed systems.
