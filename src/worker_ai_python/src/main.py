@@ -3,6 +3,7 @@ import os
 import httpx
 import asyncpg
 import redis.asyncio as redis
+from redis.exceptions import ResponseError
 from pydantic import BaseModel, ValidationError
 
 # System configurations
@@ -15,7 +16,10 @@ PG_HOST = os.getenv("POSTGRES_HOST", "localhost")
 LLM_URL = os.getenv("LLM_API_URL", "http://host.docker.internal:11434/api/generate")
 LLM_MODEL = os.getenv("LLM_MODEL_NAME", "gemma:4b")
 LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
-QUEUE_NAME = "ai_queue"
+STREAM_NAME = os.getenv("AI_STREAM_NAME", "ai_stream")
+CONSUMER_GROUP = os.getenv("AI_CONSUMER_GROUP", "ai_worker")
+CONSUMER_NAME = os.getenv("AI_CONSUMER_NAME", "ai-worker-1")
+PAYLOAD_FIELD = "payload"
 
 
 # --- DATA CONTRACT (Pydantic) ---
@@ -31,11 +35,54 @@ class AITaskContract(BaseModel):
     rating: float
 
 
+async def ensure_consumer_group(redis_client: redis.Redis) -> None:
+    try:
+        await redis_client.xgroup_create(
+            name=STREAM_NAME,
+            groupname=CONSUMER_GROUP,
+            id="0-0",
+            mkstream=True,
+        )
+    except ResponseError as exc:
+        if "BUSYGROUP" not in str(exc):
+            raise
+
+
+async def read_stream_message(redis_client: redis.Redis):
+    result = await redis_client.xreadgroup(
+        groupname=CONSUMER_GROUP,
+        consumername=CONSUMER_NAME,
+        streams={STREAM_NAME: ">"},
+        count=1,
+        block=5000,
+    )
+    if not result:
+        result = await redis_client.xreadgroup(
+            groupname=CONSUMER_GROUP,
+            consumername=CONSUMER_NAME,
+            streams={STREAM_NAME: "0"},
+            count=1,
+        )
+    if not result:
+        return None
+
+    _, messages = result[0]
+    if not messages:
+        return None
+
+    return messages[0]
+
+
 async def main():
-    print(f"AI Worker started. Listening to Redis queue: '{QUEUE_NAME}'...", flush=True)
+    print(
+        f"AI Worker started. Listening to Redis stream: "
+        f"'{STREAM_NAME}' as {CONSUMER_GROUP}/{CONSUMER_NAME}...",
+        flush=True,
+    )
 
     # Connect to Redis
     redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    await ensure_consumer_group(redis_client)
 
     # Connect to PostgreSQL
     db_pool = await asyncpg.create_pool(
@@ -47,13 +94,21 @@ async def main():
     async with httpx.AsyncClient(timeout=timeout) as http_client:
         while True:
             task: AITaskContract | None = None
+            message_id: str | None = None
             try:
-                # BRPOP blocks until a message is available (0 = wait forever)
-                result = await redis_client.brpop(QUEUE_NAME, timeout=0)
-                if not result:
+                result = await read_stream_message(redis_client)
+                if result is None:
                     continue
 
-                _, message = result
+                message_id, fields = result
+                message = fields.get(PAYLOAD_FIELD)
+                if not message:
+                    print(
+                        f"! Stream entry '{message_id}' is missing the '{PAYLOAD_FIELD}' field.",
+                        flush=True,
+                    )
+                    await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
+                    continue
 
                 # ---> PYDANTIC VALIDATION <---
                 try:
@@ -61,9 +116,10 @@ async def main():
                     task = AITaskContract.model_validate_json(message)
                 except ValidationError as ve:
                     print(
-                        f"! Data Contract Violation in queue '{QUEUE_NAME}': {ve}",
+                        f"! Data Contract Violation in stream '{STREAM_NAME}': {ve}",
                         flush=True,
                     )
+                    await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
                     continue  # Skip invalid payloads
 
                 print(
@@ -89,6 +145,7 @@ async def main():
                         summary,
                         task.id,
                     )
+                await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
                 print(f"[{task.rank}/250] Successfully saved summary.", flush=True)
 
             except Exception as e:
@@ -107,6 +164,10 @@ async def main():
                             f"[*] Reverted '{task.title}' back to 'pending' status for future retries.",
                             flush=True,
                         )
+                        if message_id is not None:
+                            await redis_client.xack(
+                                STREAM_NAME, CONSUMER_GROUP, message_id
+                            )
                     except Exception as db_err:
                         print(
                             f"! Failed to revert status in DB: {repr(db_err)}",

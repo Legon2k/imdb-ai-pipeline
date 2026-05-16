@@ -15,6 +15,7 @@ from pydantic import BaseModel
 # Global variables to hold our connections
 db_pool = None
 redis_client = None
+AI_STREAM_NAME = os.getenv("AI_STREAM_NAME", "ai_stream")
 
 
 # --- API DATA CONTRACTS (Pydantic) ---
@@ -243,7 +244,7 @@ async def recover_stuck_movies(stuck_minutes: int = Query(default=10, ge=1, le=1
 async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
     """
     Finds 'pending' movies, updates their status to 'processing' to lock them,
-    and queues them in Redis for the AI background worker.
+    and publishes them to Redis Streams for the AI background worker.
     Returns HTTP 202 Accepted instantly.
     """
     if not db_pool or not redis_client:
@@ -274,20 +275,25 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
         return {"message": "No pending movies found to enrich.", "queued_tasks": 0}
 
     tasks = [
-        json.dumps(
-            {
-                "id": movie["id"],
-                "rank": movie["rank"],
-                "title": movie["title"],
-                "rating": float(movie["rating"]),
-            }
-        )
+        {
+            "payload": json.dumps(
+                {
+                    "id": movie["id"],
+                    "rank": movie["rank"],
+                    "title": movie["title"],
+                    "rating": float(movie["rating"]),
+                }
+            )
+        }
         for movie in pending_movies
     ]
     movie_ids = [movie["id"] for movie in pending_movies]
 
     try:
-        await redis_client.lpush("ai_queue", *tasks)
+        async with redis_client.pipeline(transaction=True) as pipe:
+            for task in tasks:
+                pipe.xadd(AI_STREAM_NAME, task)
+            await pipe.execute()
     except Exception as exc:
         async with db_pool.acquire() as connection:
             await connection.execute(
@@ -300,10 +306,10 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
             )
         raise HTTPException(
             status_code=503,
-            detail="Failed to queue AI enrichment tasks. Movie locks were reverted.",
+            detail="Failed to publish AI enrichment tasks. Movie locks were reverted.",
         ) from exc
 
     return {
-        "message": "AI enrichment tasks successfully added to the background queue.",
+        "message": "AI enrichment tasks successfully added to the background stream.",
         "queued_tasks": len(tasks),
     }

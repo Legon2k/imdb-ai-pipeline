@@ -23,37 +23,58 @@ public class Worker : BackgroundService
     private readonly ILogger<Worker> _logger;
     private readonly IConnectionMultiplexer _redis;
     private readonly string _pgConnectionString;
-    private const string QueueName = "movies_queue";
+    private readonly string _streamName;
+    private readonly string _consumerGroup;
+    private readonly string _consumerName;
+    private const string PayloadField = "payload";
 
     public Worker(ILogger<Worker> logger, IConnectionMultiplexer redis, PostgresConfig pgConfig)
     {
         _logger = logger;
         _redis = redis;
         _pgConnectionString = pgConfig.ConnectionString;
+        _streamName = Environment.GetEnvironmentVariable("MOVIES_STREAM_NAME") ?? "movies_stream";
+        _consumerGroup = Environment.GetEnvironmentVariable("MOVIES_CONSUMER_GROUP") ?? "imdb_worker";
+        _consumerName = Environment.GetEnvironmentVariable("MOVIES_CONSUMER_NAME") ?? Environment.MachineName;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("IMDB Worker started. Listening to {QueueName}", QueueName);
+        _logger.LogInformation(
+            "IMDB Worker started. Listening to stream {StreamName} as {ConsumerGroup}/{ConsumerName}",
+            _streamName,
+            _consumerGroup,
+            _consumerName
+        );
         var db = _redis.GetDatabase();
+        await EnsureConsumerGroupAsync(db);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var redisValue = await db.ListRightPopAsync(QueueName);
+                var entries = await db.StreamReadGroupAsync(
+                    _streamName,
+                    _consumerGroup,
+                    _consumerName,
+                    ">",
+                    count: 1
+                );
 
-                if (redisValue.HasValue)
+                if (entries.Length == 0)
                 {
-                    // 2. Deserialize JSON
-                    var movie = JsonSerializer.Deserialize<MoviePayload>(redisValue.ToString()!);
-                    
-                    if (movie != null)
-                    {
-                        // 3. Save to PostgreSQL using Dapper
-                        await SaveMovieToDatabaseAsync(movie, stoppingToken);
-                        _logger.LogInformation("Saved to DB: {Title}", movie.Title);
-                    }
+                    entries = await db.StreamReadGroupAsync(
+                        _streamName,
+                        _consumerGroup,
+                        _consumerName,
+                        "0",
+                        count: 1
+                    );
+                }
+
+                if (entries.Length > 0)
+                {
+                    await ProcessEntryAsync(db, entries[0], stoppingToken);
                 }
                 else
                 {
@@ -66,6 +87,57 @@ public class Worker : BackgroundService
                 await Task.Delay(5000, stoppingToken);
             }
         }
+    }
+
+    private async Task EnsureConsumerGroupAsync(IDatabase db)
+    {
+        try
+        {
+            await db.StreamCreateConsumerGroupAsync(
+                _streamName,
+                _consumerGroup,
+                "0-0",
+                createStream: true
+            );
+        }
+        catch (RedisServerException ex) when (ex.Message.Contains("BUSYGROUP"))
+        {
+            // Group already exists; this is expected on restarts.
+        }
+    }
+
+    private async Task ProcessEntryAsync(IDatabase db, StreamEntry entry, CancellationToken ct)
+    {
+        var payload = entry.Values.FirstOrDefault(value => value.Name == PayloadField).Value;
+        if (!payload.HasValue)
+        {
+            _logger.LogWarning("Skipping stream entry {MessageId}: missing payload field", entry.Id);
+            await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
+            return;
+        }
+
+        MoviePayload? movie;
+        try
+        {
+            movie = JsonSerializer.Deserialize<MoviePayload>(payload.ToString());
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Skipping stream entry {MessageId}: invalid movie payload", entry.Id);
+            await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
+            return;
+        }
+
+        if (movie == null)
+        {
+            _logger.LogWarning("Skipping stream entry {MessageId}: empty movie payload", entry.Id);
+            await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
+            return;
+        }
+
+        await SaveMovieToDatabaseAsync(movie, ct);
+        await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
+        _logger.LogInformation("Saved to DB and acknowledged stream entry: {Title}", movie.Title);
     }
 
     private async Task SaveMovieToDatabaseAsync(MoviePayload movie, CancellationToken ct)

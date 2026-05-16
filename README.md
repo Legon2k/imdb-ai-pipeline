@@ -4,7 +4,7 @@ A high-performance, distributed data pipeline. It scrapes the IMDb Top 250 chart
 
 ## 🏗️ Architecture Overview
 
-This project implements a fully decoupled Event-Driven ETL (Extract, Transform, Load) architecture with isolated asynchronous task queues, strict Pydantic Data Contracts, and Self-Healing capabilities:
+This project implements a fully decoupled Event-Driven ETL (Extract, Transform, Load) architecture with isolated Redis Streams, consumer groups, strict Pydantic Data Contracts, and Self-Healing capabilities:
 
 ```mermaid
 graph TD
@@ -12,27 +12,27 @@ graph TD
     Client([Business Client])
     IMDB[IMDB Website]
     Scraper(Python + Playwright<br/>Data Producer)
-    RedisMovies[(Redis Broker<br/>'movies_queue')]
+    RedisMovies[(Redis Stream<br/>'movies_stream')]
     WorkerNET(.NET 10 Worker<br/>Data Consumer)
     DB[(PostgreSQL<br/>Persistent Storage)]
     API(FastAPI<br/>API Gateway)
-    RedisAI[(Redis Broker<br/>'ai_queue')]
+    RedisAI[(Redis Stream<br/>'ai_stream')]
     WorkerAI(Python AI Worker<br/>LLM Consumer)
     LLM{{Local LLM<br/>Ollama / Gemma}}
 
     %% Define Flow
     IMDB -- 1. Scrape DOM --> Scraper
-    Scraper -- 2. Push JSON --> RedisMovies
-    RedisMovies -- 3. Pop (FIFO) --> WorkerNET
-    WorkerNET -- 4. Upsert (Pending) --> DB
+    Scraper -- 2. XADD payload --> RedisMovies
+    RedisMovies -- 3. XREADGROUP --> WorkerNET
+    WorkerNET -- 4. Upsert + XACK --> DB
     
     Client -- 5. Trigger Enrichment --> API
     API -- 6. Lock Pending<br/>SKIP LOCKED --> DB
-    API -- 7. Push Tasks --> RedisAI
-    RedisAI -- 9. Pop (FIFO) --> WorkerAI
+    API -- 7. XADD Tasks --> RedisAI
+    RedisAI -- 9. XREADGROUP --> WorkerAI
     WorkerAI -- 10. Prompt --> LLM
     LLM -- 11. Summary --> WorkerAI
-    WorkerAI -- 12. Update (Completed) --> DB
+    WorkerAI -- 12. Update + XACK --> DB
     
     Client -- 13. Download .xlsx --> API
 
@@ -48,20 +48,21 @@ graph TD
 ```
 
 ### Components:
-1. **Scraper (Python):** Extracts raw data from the DOM, blocks heavy resources, and pushes payloads to the `movies_queue`.
-2. **Message Broker (Redis):** Holds isolated queues (`movies_queue` and `ai_queue`) to buffer work and enable asynchronous processing.
-3. **Data Worker (.NET 10 + Dapper):** Listens to `movies_queue`, deserializes payloads, and performs a SQL UPSERT into PostgreSQL.
-4. **API Gateway (FastAPI):** Exposes Swagger UI with strictly typed response schemas via `Pydantic`, exports `.xlsx` reports, provides health/readiness probes, atomically locks records with `FOR UPDATE SKIP LOCKED`, and pushes AI tasks to the `ai_queue`.
-5. **AI Worker (Python):** A dedicated background worker listening to `ai_queue`. It validates incoming tasks using strict `Pydantic` Data Contracts and communicates with the Local LLM one-by-one with a bounded request timeout to prevent indefinite hangs.
+1. **Scraper (Python):** Extracts raw data from the DOM, blocks heavy resources, and publishes payloads to the `movies_stream`.
+2. **Message Broker (Redis):** Holds isolated streams (`movies_stream` and `ai_stream`) with consumer groups and explicit acknowledgements.
+3. **Data Worker (.NET 10 + Dapper):** Reads `movies_stream`, deserializes payloads, performs a SQL UPSERT into PostgreSQL, and acknowledges processed stream entries.
+4. **API Gateway (FastAPI):** Exposes Swagger UI with strictly typed response schemas via `Pydantic`, exports `.xlsx` reports, provides health/readiness probes, atomically locks records with `FOR UPDATE SKIP LOCKED`, and publishes AI tasks to the `ai_stream`.
+5. **AI Worker (Python):** A dedicated background worker reading `ai_stream`. It validates incoming tasks using strict `Pydantic` Data Contracts and communicates with the Local LLM one-by-one with a bounded request timeout to prevent indefinite hangs.
 6. **Database (PostgreSQL):** Final persistent storage for movies and AI summaries.
 
 ### Enterprise Features:
 1. **Asynchronous Producers & Consumers:** Data is scraped, buffered in Redis, and consumed by isolated background workers to prevent bottlenecks.
 2. **Strict Data Contracts:** JSON payloads are validated across microservices using `Pydantic` to prevent silent failures and corrupt data injection.
-3. **Self-Healing System:** Solves the "Zombie Task" problem. If the Local LLM crashes or times out, the system automatically catches the exception, unlocks the record, and resets its status to `pending` for future retries.
-4. **Concurrency-Safe Enrichment:** The enrichment endpoint locks `pending` rows with PostgreSQL `FOR UPDATE SKIP LOCKED`, so overlapping API requests do not queue the same movies twice.
-5. **Operational Probes:** The API exposes `/health` for liveness and `/ready` for PostgreSQL/Redis readiness checks.
-6. **VRAM Protection:** AI enrichment is offloaded to a dedicated queue, processing prompts one-by-one to prevent Local LLM Out-Of-Memory (OOM) crashes.
+3. **Reliable Stream Processing:** Redis Streams consumer groups keep delivered messages pending until workers explicitly acknowledge them with `XACK`.
+4. **Self-Healing System:** Solves the "Zombie Task" problem. If the Local LLM crashes or times out, the system automatically catches the exception, unlocks the record, and resets its status to `pending` for future retries.
+5. **Concurrency-Safe Enrichment:** The enrichment endpoint locks `pending` rows with PostgreSQL `FOR UPDATE SKIP LOCKED`, so overlapping API requests do not queue the same movies twice.
+6. **Operational Probes:** The API exposes `/health` for liveness and `/ready` for PostgreSQL/Redis readiness checks.
+7. **VRAM Protection:** AI enrichment is offloaded to a dedicated stream, processing prompts one-by-one to prevent Local LLM Out-Of-Memory (OOM) crashes.
 
 ## 🚀 Quick Start (Docker Compose)
 
@@ -73,7 +74,7 @@ docker compose up -d postgres redis redis-insight worker api worker_ai
 ```
 
 **2. Access the UIs**
-- **Redis Insight:** [http://localhost:5540](http://localhost:5540) (Monitor the message queues)
+- **Redis Insight:** [http://localhost:5540](http://localhost:5540) (Monitor Redis Streams)
 - **FastAPI Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs) (API Endpoints)
 - **API Health:** [http://localhost:8000/health](http://localhost:8000/health)
 - **API Readiness:** [http://localhost:8000/ready](http://localhost:8000/ready)
@@ -82,11 +83,11 @@ docker compose up -d postgres redis redis-insight worker api worker_ai
 ```bash
 docker compose start scraper
 ```
-The `.NET worker` will instantly pick up the payloads from Redis and save them to PostgreSQL with a `pending` status.
+The `.NET worker` will pick up payloads from `movies_stream`, save them to PostgreSQL with a `pending` status, and acknowledge each processed stream entry.
 
 ## 🪄 AI Enrichment (Local LLM) & Self-Healing
 
-Integrates with local LLMs (e.g., Ollama with the `gemma4:e4b` model) using an asynchronous job queue.
+Integrates with local LLMs (e.g., Ollama with the `gemma4:e4b` model) using an asynchronous Redis Stream.
 
 **1. Start Ollama on your host machine:**
 Using PowerShell, ensure Ollama listens on all interfaces:
@@ -95,7 +96,7 @@ $env:OLLAMA_HOST="0.0.0.0"; ollama run gemma4:e4b
 ```
 
 **2. Trigger the Enrichment API:**
-Open the Swagger UI, navigate to `POST /movies/enrich`, and execute. The API locks a batch of `pending` movies, queues them for the AI Worker, and returns `HTTP 202 Accepted` while generation continues in the background.
+Open the Swagger UI, navigate to `POST /movies/enrich`, and execute. The API locks a batch of `pending` movies, publishes tasks to `ai_stream`, and returns `HTTP 202 Accepted` while generation continues in the background.
 
 **3. Recover Stuck Tasks (Self-Healing):**
 If the host machine loses power or the LLM crashes, you can recover stuck tasks via the `POST /movies/recover` endpoint. It scans the database for zombie processes and safely reverts them to `pending`. The `stuck_minutes` parameter is validated and passed to PostgreSQL as a query parameter.

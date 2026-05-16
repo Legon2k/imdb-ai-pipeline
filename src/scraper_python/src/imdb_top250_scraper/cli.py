@@ -87,7 +87,7 @@ async def main() -> None:
         locale=args.locale,
     )
 
-    LOGGER.info("Successfully pushed %s movies to Redis queue.", len(movies))
+    LOGGER.info("Successfully published %s movies to Redis stream.", len(movies))
 
 
 def run() -> None:

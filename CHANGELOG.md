@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [0.6.0] - 2026-05-16
 ### Reliability Hardening
 - **Added:** FastAPI liveness and readiness endpoints: `GET /health` and `GET /ready`.
+- **Changed:** Replaced Redis List queue operations with Redis Streams consumer groups for movie ingestion and AI enrichment tasks.
 - **Changed:** `POST /movies/enrich` now locks pending rows with PostgreSQL `FOR UPDATE SKIP LOCKED` before queueing AI tasks, preventing duplicate queueing during overlapping enrichment requests.
 - **Fixed:** `POST /movies/recover` now uses a parameterized interval query and validates `stuck_minutes`.
 - **Fixed:** AI Worker task recovery no longer relies on `locals()`, preventing an older task from being reverted after an unrelated failure.

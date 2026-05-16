@@ -157,7 +157,7 @@ async def scrape_once(
             # ==========================================
             LOGGER.info("Successfully extracted %d movies. Pushing to Redis...", len(results))
 
-            publisher = RedisPublisher(queue_name="movies_queue")
+            publisher = RedisPublisher()
             published_count = 0
 
             for movie in results:

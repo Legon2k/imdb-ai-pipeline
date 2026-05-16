@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 class RedisPublisher:
-    def __init__(self, queue_name: str = "movies_queue"):
-        self.queue_name = queue_name
+    def __init__(self, stream_name: str | None = None):
+        self.stream_name = stream_name or os.getenv("MOVIES_STREAM_NAME", "movies_stream")
 
         # Fetch host and port from environment variables (Docker injects these via .env)
         redis_host = os.getenv("REDIS_HOST", "localhost")
@@ -33,7 +33,7 @@ class RedisPublisher:
 
     def publish_movie(self, movie_data: dict[str, Any]) -> bool:
         """
-        Publishes a dictionary with movie data to the Redis queue.
+        Publishes a dictionary with movie data to the Redis stream.
 
         Args:
             movie_data: Dictionary containing scraped movie details.
@@ -43,10 +43,9 @@ class RedisPublisher:
         try:
             json_payload = json.dumps(movie_data)
 
-            # LPUSH adds the payload to the head of the list (acting as a queue)
-            self.client.lpush(self.queue_name, json_payload)
+            self.client.xadd(self.stream_name, {"payload": json_payload})
             logger.info(
-                f"Successfully published movie to queue: {movie_data.get('title', 'Unknown')}"
+                f"Successfully published movie to stream: {movie_data.get('title', 'Unknown')}"
             )
             return True
         except Exception as e:
