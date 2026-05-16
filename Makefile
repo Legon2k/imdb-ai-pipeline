@@ -11,6 +11,7 @@ install-browser:
 
 test:
 	python -B -m unittest discover -s src/scraper_python/tests
+	python -B -m unittest discover -s src/api_fastapi/tests
 
 lint:
 	ruff check .

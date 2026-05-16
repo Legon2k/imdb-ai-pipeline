@@ -113,7 +113,8 @@ Business users can download a complete report containing movie data and AI-gener
 
 Run tests:
 ```powershell
-python -m unittest discover -s src/scraper_python/tests
+python -B -m unittest discover -s src/scraper_python/tests
+python -B -m unittest discover -s src/api_fastapi/tests
 ```
 
 Run Ruff linting and formatting:
