@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 class RedisPublisher:
     def __init__(self, stream_name: str | None = None):
         self.stream_name = stream_name or os.getenv("MOVIES_STREAM_NAME", "movies_stream")
+        self.stream_maxlen = int(os.getenv("MOVIES_STREAM_MAXLEN", "1000"))
 
         # Fetch host and port from environment variables (Docker injects these via .env)
         redis_host = os.getenv("REDIS_HOST", "localhost")
@@ -43,7 +44,12 @@ class RedisPublisher:
         try:
             json_payload = json.dumps(movie_data)
 
-            self.client.xadd(self.stream_name, {"payload": json_payload})
+            self.client.xadd(
+                self.stream_name,
+                {"payload": json_payload},
+                maxlen=self.stream_maxlen,
+                approximate=True,
+            )
             logger.info(
                 f"Successfully published movie to stream: {movie_data.get('title', 'Unknown')}"
             )

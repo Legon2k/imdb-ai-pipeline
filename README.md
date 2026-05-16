@@ -59,10 +59,11 @@ graph TD
 1. **Asynchronous Producers & Consumers:** Data is scraped, buffered in Redis, and consumed by isolated background workers to prevent bottlenecks.
 2. **Strict Data Contracts:** JSON payloads are validated across microservices using `Pydantic` to prevent silent failures and corrupt data injection.
 3. **Reliable Stream Processing:** Redis Streams consumer groups keep delivered messages pending until workers explicitly acknowledge them with `XACK`.
-4. **Self-Healing System:** Solves the "Zombie Task" problem. If the Local LLM crashes or times out, the system automatically catches the exception, unlocks the record, and resets its status to `pending` for future retries.
-5. **Concurrency-Safe Enrichment:** The enrichment endpoint locks `pending` rows with PostgreSQL `FOR UPDATE SKIP LOCKED`, so overlapping API requests do not queue the same movies twice.
-6. **Operational Probes:** The API exposes `/health` for liveness and `/ready` for PostgreSQL/Redis readiness checks.
-7. **VRAM Protection:** AI enrichment is offloaded to a dedicated stream, processing prompts one-by-one to prevent Local LLM Out-Of-Memory (OOM) crashes.
+4. **Bounded Stream Retention:** Producers use approximate `MAXLEN` trimming to keep stream history from growing without limit.
+5. **Self-Healing System:** Solves the "Zombie Task" problem. If the Local LLM crashes or times out, the system automatically catches the exception, unlocks the record, and resets its status to `pending` for future retries.
+6. **Concurrency-Safe Enrichment:** The enrichment endpoint locks `pending` rows with PostgreSQL `FOR UPDATE SKIP LOCKED`, so overlapping API requests do not queue the same movies twice.
+7. **Operational Probes:** The API exposes `/health` for liveness and `/ready` for PostgreSQL/Redis readiness checks.
+8. **VRAM Protection:** AI enrichment is offloaded to a dedicated stream, processing prompts one-by-one to prevent Local LLM Out-Of-Memory (OOM) crashes.
 
 ## 🚀 Quick Start (Docker Compose)
 
@@ -103,6 +104,9 @@ If the host machine loses power or the LLM crashes, you can recover stuck tasks 
 
 **4. Tune LLM Timeout:**
 Set `LLM_TIMEOUT_SECONDS` in `.env` to control the maximum duration of a single Ollama generation request. The default is `600` seconds.
+
+**5. Tune Stream Retention:**
+Set `MOVIES_STREAM_MAXLEN` and `AI_STREAM_MAXLEN` in `.env` to control approximate Redis Stream retention. The default is `1000` entries per stream.
 
 ## 📊 Excel Export
 

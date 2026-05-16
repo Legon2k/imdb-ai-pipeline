@@ -16,6 +16,7 @@ from pydantic import BaseModel
 db_pool = None
 redis_client = None
 AI_STREAM_NAME = os.getenv("AI_STREAM_NAME", "ai_stream")
+AI_STREAM_MAXLEN = int(os.getenv("AI_STREAM_MAXLEN", "1000"))
 
 
 # --- API DATA CONTRACTS (Pydantic) ---
@@ -292,7 +293,12 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
     try:
         async with redis_client.pipeline(transaction=True) as pipe:
             for task in tasks:
-                pipe.xadd(AI_STREAM_NAME, task)
+                pipe.xadd(
+                    AI_STREAM_NAME,
+                    task,
+                    maxlen=AI_STREAM_MAXLEN,
+                    approximate=True,
+                )
             await pipe.execute()
     except Exception as exc:
         async with db_pool.acquire() as connection:

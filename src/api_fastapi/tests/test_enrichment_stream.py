@@ -113,8 +113,8 @@ class FakePipeline:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    def xadd(self, stream_name, fields):
-        self.xadd_calls.append((stream_name, fields))
+    def xadd(self, stream_name, fields, maxlen=None, approximate=False):
+        self.xadd_calls.append((stream_name, fields, maxlen, approximate))
 
     async def execute(self):
         if self.should_fail:
@@ -136,12 +136,15 @@ class EnrichmentStreamTest(unittest.IsolatedAsyncioTestCase):
         self.original_db_pool = api_main.db_pool
         self.original_redis_client = api_main.redis_client
         self.original_stream_name = api_main.AI_STREAM_NAME
+        self.original_stream_maxlen = api_main.AI_STREAM_MAXLEN
         api_main.AI_STREAM_NAME = "ai_stream_test"
+        api_main.AI_STREAM_MAXLEN = 25
 
     def tearDown(self):
         api_main.db_pool = self.original_db_pool
         api_main.redis_client = self.original_redis_client
         api_main.AI_STREAM_NAME = self.original_stream_name
+        api_main.AI_STREAM_MAXLEN = self.original_stream_maxlen
 
     async def test_enrich_movies_locks_pending_movies_and_publishes_stream_tasks(self):
         pending_movies = [
@@ -162,8 +165,12 @@ class EnrichmentStreamTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(redis_client.transaction)
         self.assertEqual(len(redis_client.pipeline_instance.xadd_calls), 2)
 
-        stream_name, fields = redis_client.pipeline_instance.xadd_calls[0]
+        stream_name, fields, maxlen, approximate = (
+            redis_client.pipeline_instance.xadd_calls[0]
+        )
         self.assertEqual(stream_name, "ai_stream_test")
+        self.assertEqual(maxlen, 25)
+        self.assertTrue(approximate)
         payload = json.loads(fields["payload"])
         self.assertEqual(payload["id"], 1)
         self.assertEqual(payload["title"], "First Movie")

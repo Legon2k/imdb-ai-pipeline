@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 ### Reliability Hardening
 - **Added:** FastAPI liveness and readiness endpoints: `GET /health` and `GET /ready`.
 - **Added:** API smoke tests for enrichment locking, Redis Stream publishing, and rollback on publish failure.
+- **Added:** Configurable approximate Redis Stream retention via `MOVIES_STREAM_MAXLEN` and `AI_STREAM_MAXLEN`.
 - **Changed:** Replaced Redis List queue operations with Redis Streams consumer groups for movie ingestion and AI enrichment tasks.
 - **Changed:** `POST /movies/enrich` now locks pending rows with PostgreSQL `FOR UPDATE SKIP LOCKED` before queueing AI tasks, preventing duplicate queueing during overlapping enrichment requests.
 - **Fixed:** `POST /movies/recover` now uses a parameterized interval query and validates `stuck_minutes`.
