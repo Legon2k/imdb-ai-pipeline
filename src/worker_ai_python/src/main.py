@@ -1,11 +1,11 @@
 # --- START OF FILE main.py ---
 
 import asyncio
-import json
 import os
 import httpx
 import asyncpg
 import redis.asyncio as redis
+from pydantic import BaseModel, ValidationError
 
 # System configurations
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
@@ -17,6 +17,19 @@ PG_HOST = os.getenv("POSTGRES_HOST", "localhost")
 LLM_URL = os.getenv("LLM_API_URL", "http://host.docker.internal:11434/api/generate")
 LLM_MODEL = os.getenv("LLM_MODEL_NAME", "gemma:4b")
 QUEUE_NAME = "ai_queue"
+
+
+# --- DATA CONTRACT (Pydantic) ---
+class AITaskContract(BaseModel):
+    """
+    Strict data contract for incoming AI tasks from Redis.
+    Validates that the JSON payload contains all required fields with correct types.
+    """
+
+    id: int
+    rank: int
+    title: str
+    rating: float
 
 
 async def main():
@@ -40,18 +53,25 @@ async def main():
                     continue
 
                 _, message = result
-                task = json.loads(message)
 
-                movie_id = task["id"]
-                title = task["title"]
-                rank = task["rank"]
-                rating = task["rating"]
+                # ---> PYDANTIC VALIDATION <---
+                try:
+                    # Validate the raw JSON string against our strict contract
+                    task = AITaskContract.model_validate_json(message)
+                except ValidationError as ve:
+                    print(
+                        f"! Data Contract Violation in queue '{QUEUE_NAME}': {ve}",
+                        flush=True,
+                    )
+                    continue  # Skip invalid payloads
 
+                # Now we use dot notation (task.title) instead of dictionary lookup (task["title"])
                 print(
-                    f"[{rank}/250] Generating AI summary for '{title}'...", flush=True
+                    f"[{task.rank}/250] Generating AI summary for '{task.title}'...",
+                    flush=True,
                 )
 
-                prompt = f"Write a short, engaging 1-sentence summary for the famous movie '{title}' (IMDB Rating: {rating}). Do not include any intro, just the summary."
+                prompt = f"Write a short, engaging 1-sentence summary for the famous movie '{task.title}' (IMDB Rating: {task.rating}). Do not include any intro, just the summary."
                 payload = {"model": LLM_MODEL, "prompt": prompt, "stream": False}
 
                 # Request LLM
@@ -65,9 +85,9 @@ async def main():
                     await conn.execute(
                         "UPDATE movies SET ai_summary = $1, status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $2;",
                         summary,
-                        movie_id,
+                        task.id,
                     )
-                print(f"[{rank}/250] Successfully saved summary.", flush=True)
+                print(f"[{task.rank}/250] Successfully saved summary.", flush=True)
 
             except Exception as e:
                 print(f"! Error processing AI task: {repr(e)}", flush=True)

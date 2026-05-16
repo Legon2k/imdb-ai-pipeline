@@ -1,10 +1,11 @@
-# --- START OF FILE main.py ---
+from pydantic import BaseModel
+from datetime import datetime
 
 import io
 import json
 import os
 from contextlib import asynccontextmanager
-from typing import List, Dict, Any
+from typing import List
 
 import asyncpg
 import pandas as pd
@@ -15,6 +16,24 @@ from fastapi.responses import StreamingResponse
 # Global variables to hold our connections
 db_pool = None
 redis_client = None
+
+
+class MovieResponse(BaseModel):
+    """Data contract for the API response."""
+
+    id: int
+    imdb_id: str
+    rank: int
+    title: str
+    rating: float
+    votes: str
+    status: str
+    updated_at: datetime
+
+
+class EnrichmentResponse(BaseModel):
+    message: str
+    queued_tasks: int
 
 
 @asynccontextmanager
@@ -55,8 +74,13 @@ app = FastAPI(
 )
 
 
-@app.get("/movies", summary="Get all movies", tags=["Movies"])
-async def get_movies(limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+@app.get(
+    "/movies",
+    summary="Get all movies",
+    tags=["Movies"],
+    response_model=List[MovieResponse],
+)
+async def get_movies(limit: int = 50, offset: int = 0):
     if not db_pool:
         raise HTTPException(
             status_code=500, detail="Database connection is not initialized."
@@ -114,10 +138,11 @@ async def export_movies_to_excel():
 @app.post(
     "/movies/enrich",
     status_code=202,
-    summary="Trigger AI Enrichment (Async)",
+    summary="Trigger AI Enrichment",
     tags=["AI Enrichment"],
+    response_model=EnrichmentResponse,
 )
-async def enrich_movies(limit: int = 5) -> Dict[str, Any]:
+async def enrich_movies(limit: int = 5):
     """
     Finds 'pending' movies and queues them in Redis for the AI background worker.
     Returns HTTP 202 Accepted instantly.
