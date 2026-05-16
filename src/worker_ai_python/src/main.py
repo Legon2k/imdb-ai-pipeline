@@ -1,5 +1,8 @@
 import asyncio
+import logging
 import os
+from time import perf_counter
+
 import httpx
 import asyncpg
 import redis.asyncio as redis
@@ -20,6 +23,12 @@ STREAM_NAME = os.getenv("AI_STREAM_NAME", "ai_stream")
 CONSUMER_GROUP = os.getenv("AI_CONSUMER_GROUP", "ai_worker")
 CONSUMER_NAME = os.getenv("AI_CONSUMER_NAME", "ai-worker-1")
 PAYLOAD_FIELD = "payload"
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+LOGGER = logging.getLogger("imdb_ai_worker")
 
 
 # --- DATA CONTRACT (Pydantic) ---
@@ -43,9 +52,19 @@ async def ensure_consumer_group(redis_client: redis.Redis) -> None:
             id="0-0",
             mkstream=True,
         )
+        LOGGER.info(
+            "event=consumer_group_created stream=%s group=%s",
+            STREAM_NAME,
+            CONSUMER_GROUP,
+        )
     except ResponseError as exc:
         if "BUSYGROUP" not in str(exc):
             raise
+        LOGGER.info(
+            "event=consumer_group_exists stream=%s group=%s",
+            STREAM_NAME,
+            CONSUMER_GROUP,
+        )
 
 
 async def read_stream_message(redis_client: redis.Redis):
@@ -74,10 +93,13 @@ async def read_stream_message(redis_client: redis.Redis):
 
 
 async def main():
-    print(
-        f"AI Worker started. Listening to Redis stream: "
-        f"'{STREAM_NAME}' as {CONSUMER_GROUP}/{CONSUMER_NAME}...",
-        flush=True,
+    LOGGER.info(
+        "event=worker_started stream=%s group=%s consumer=%s model=%s timeout_seconds=%s",
+        STREAM_NAME,
+        CONSUMER_GROUP,
+        CONSUMER_NAME,
+        LLM_MODEL,
+        LLM_TIMEOUT_SECONDS,
     )
 
     # Connect to Redis
@@ -103,11 +125,21 @@ async def main():
                 message_id, fields = result
                 message = fields.get(PAYLOAD_FIELD)
                 if not message:
-                    print(
-                        f"! Stream entry '{message_id}' is missing the '{PAYLOAD_FIELD}' field.",
-                        flush=True,
+                    LOGGER.warning(
+                        "event=message_missing_payload stream=%s group=%s consumer=%s message_id=%s field=%s",
+                        STREAM_NAME,
+                        CONSUMER_GROUP,
+                        CONSUMER_NAME,
+                        message_id,
+                        PAYLOAD_FIELD,
                     )
                     await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
+                    LOGGER.info(
+                        "event=message_acked stream=%s group=%s message_id=%s reason=missing_payload",
+                        STREAM_NAME,
+                        CONSUMER_GROUP,
+                        message_id,
+                    )
                     continue
 
                 # ---> PYDANTIC VALIDATION <---
@@ -115,24 +147,42 @@ async def main():
                     # Validate the raw JSON string against our strict contract
                     task = AITaskContract.model_validate_json(message)
                 except ValidationError as ve:
-                    print(
-                        f"! Data Contract Violation in stream '{STREAM_NAME}': {ve}",
-                        flush=True,
+                    LOGGER.warning(
+                        "event=contract_violation stream=%s group=%s consumer=%s message_id=%s error=%r",
+                        STREAM_NAME,
+                        CONSUMER_GROUP,
+                        CONSUMER_NAME,
+                        message_id,
+                        ve,
                     )
                     await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
+                    LOGGER.info(
+                        "event=message_acked stream=%s group=%s message_id=%s reason=contract_violation",
+                        STREAM_NAME,
+                        CONSUMER_GROUP,
+                        message_id,
+                    )
                     continue  # Skip invalid payloads
 
-                print(
-                    f"[{task.rank}/250] Generating AI summary for '{task.title}'...",
-                    flush=True,
+                LOGGER.info(
+                    "event=task_started stream=%s group=%s consumer=%s message_id=%s movie_id=%s rank=%s title=%r",
+                    STREAM_NAME,
+                    CONSUMER_GROUP,
+                    CONSUMER_NAME,
+                    message_id,
+                    task.id,
+                    task.rank,
+                    task.title,
                 )
 
                 prompt = f"Write a short, engaging 1-sentence summary for the famous movie '{task.title}' (IMDB Rating: {task.rating}). Do not include any intro, just the summary."
                 payload = {"model": LLM_MODEL, "prompt": prompt, "stream": False}
 
                 # Request LLM
+                started_at = perf_counter()
                 response = await http_client.post(LLM_URL, json=payload)
                 response.raise_for_status()
+                llm_duration_ms = round((perf_counter() - started_at) * 1000, 2)
 
                 summary = response.json().get("response", "").strip()
                 if not summary:
@@ -146,10 +196,28 @@ async def main():
                         task.id,
                     )
                 await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
-                print(f"[{task.rank}/250] Successfully saved summary.", flush=True)
+                LOGGER.info(
+                    "event=task_completed stream=%s group=%s consumer=%s message_id=%s movie_id=%s rank=%s llm_duration_ms=%s summary_chars=%s",
+                    STREAM_NAME,
+                    CONSUMER_GROUP,
+                    CONSUMER_NAME,
+                    message_id,
+                    task.id,
+                    task.rank,
+                    llm_duration_ms,
+                    len(summary),
+                )
 
             except Exception as e:
-                print(f"! Error processing AI task: {repr(e)}", flush=True)
+                LOGGER.exception(
+                    "event=task_failed stream=%s group=%s consumer=%s message_id=%s movie_id=%s error=%r",
+                    STREAM_NAME,
+                    CONSUMER_GROUP,
+                    CONSUMER_NAME,
+                    message_id,
+                    task.id if task is not None else None,
+                    e,
+                )
 
                 # ---> SAFEGUARD / SELF-HEALING <---
                 # Revert the status in the database so it's not locked forever as a 'zombie' task
@@ -160,18 +228,28 @@ async def main():
                                 "UPDATE movies SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE id = $1;",
                                 task.id,
                             )
-                        print(
-                            f"[*] Reverted '{task.title}' back to 'pending' status for future retries.",
-                            flush=True,
+                        LOGGER.info(
+                            "event=task_reverted movie_id=%s rank=%s title=%r status=pending",
+                            task.id,
+                            task.rank,
+                            task.title,
                         )
                         if message_id is not None:
                             await redis_client.xack(
                                 STREAM_NAME, CONSUMER_GROUP, message_id
                             )
+                            LOGGER.info(
+                                "event=message_acked stream=%s group=%s message_id=%s reason=task_reverted",
+                                STREAM_NAME,
+                                CONSUMER_GROUP,
+                                message_id,
+                            )
                     except Exception as db_err:
-                        print(
-                            f"! Failed to revert status in DB: {repr(db_err)}",
-                            flush=True,
+                        LOGGER.exception(
+                            "event=task_revert_failed movie_id=%s rank=%s error=%r",
+                            task.id,
+                            task.rank,
+                            db_err,
                         )
 
                 await asyncio.sleep(5)  # Delay on error to prevent API spamming

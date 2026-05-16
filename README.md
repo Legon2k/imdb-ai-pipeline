@@ -52,7 +52,7 @@ graph TD
 2. **Message Broker (Redis):** Holds isolated streams (`movies_stream` and `ai_stream`) with consumer groups and explicit acknowledgements.
 3. **Data Worker (.NET 10 + Dapper):** Reads `movies_stream`, deserializes payloads, performs a SQL UPSERT into PostgreSQL, and acknowledges processed stream entries.
 4. **API Gateway (FastAPI):** Exposes Swagger UI with strictly typed response schemas via `Pydantic`, exports `.xlsx` reports, provides health/readiness probes, atomically locks records with `FOR UPDATE SKIP LOCKED`, and publishes AI tasks to the `ai_stream`.
-5. **AI Worker (Python):** A dedicated background worker reading `ai_stream`. It validates incoming tasks using strict `Pydantic` Data Contracts and communicates with the Local LLM one-by-one with a bounded request timeout to prevent indefinite hangs.
+5. **AI Worker (Python):** A dedicated background worker reading `ai_stream`. It validates incoming tasks using strict `Pydantic` Data Contracts, emits event-style diagnostic logs, and communicates with the Local LLM one-by-one with a bounded request timeout to prevent indefinite hangs.
 6. **Database (PostgreSQL):** Final persistent storage for movies and AI summaries.
 
 ### Enterprise Features:
@@ -63,7 +63,8 @@ graph TD
 5. **Self-Healing System:** Solves the "Zombie Task" problem. If the Local LLM crashes or times out, the system automatically catches the exception, unlocks the record, and resets its status to `pending` for future retries.
 6. **Concurrency-Safe Enrichment:** The enrichment endpoint locks `pending` rows with PostgreSQL `FOR UPDATE SKIP LOCKED`, so overlapping API requests do not queue the same movies twice.
 7. **Operational Probes:** The API exposes `/health` for liveness and `/ready` for PostgreSQL/Redis readiness checks, and Docker Compose uses `/ready` as the API container healthcheck.
-8. **VRAM Protection:** AI enrichment is offloaded to a dedicated stream, processing prompts one-by-one to prevent Local LLM Out-Of-Memory (OOM) crashes.
+8. **Worker Diagnostics:** The AI Worker logs stream message IDs, consumer group details, movie identifiers, LLM request duration, acknowledgements, failures, and recovery actions.
+9. **VRAM Protection:** AI enrichment is offloaded to a dedicated stream, processing prompts one-by-one to prevent Local LLM Out-Of-Memory (OOM) crashes.
 
 ## 🚀 Quick Start (Docker Compose)
 
@@ -107,6 +108,9 @@ Set `LLM_TIMEOUT_SECONDS` in `.env` to control the maximum duration of a single 
 
 **5. Tune Stream Retention:**
 Set `MOVIES_STREAM_MAXLEN` and `AI_STREAM_MAXLEN` in `.env` to control approximate Redis Stream retention. The default is `1000` entries per stream.
+
+**6. Tune Log Verbosity:**
+Set `LOG_LEVEL` in `.env` to control Python worker log verbosity. The default is `INFO`.
 
 ## 📊 Excel Export
 
