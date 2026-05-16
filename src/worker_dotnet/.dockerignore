@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.nupkg
+TestResults/
+coverage/
+.git/
+.gitignore
+Dockerfile
+README.md
