@@ -52,8 +52,8 @@ graph TD
 1. **Scraper (Python):** Extracts raw data from the DOM, blocks heavy resources, and pushes payloads to the `movies_queue`.
 2. **Message Broker (Redis):** Holds isolated queues (`movies_queue` and `ai_queue`) to ensure zero data loss and enable asynchronous processing.
 3. **Data Worker (.NET 10 + Dapper):** Listens to `movies_queue`, deserializes payloads, and performs a SQL UPSERT into PostgreSQL.
-4. **API Gateway (FastAPI):** Exposes Swagger UI, exports `.xlsx` reports, locks records by setting them to `processing`, and pushes AI tasks to the `ai_queue`.
-5. **AI Worker (Python):** A dedicated background worker listening to `ai_queue`. It communicates with the Local LLM one-by-one to prevent VRAM Out-Of-Memory (OOM) errors and timeouts.
+4. **API Gateway (FastAPI):** Exposes Swagger UI with strictly typed response schemas via `Pydantic`, exports `.xlsx` reports, locks records, and pushes AI tasks to the `ai_queue`.
+5. **AI Worker (Python):** A dedicated background worker listening to `ai_queue`. It validates incoming tasks using strict `Pydantic` Data Contracts and communicates with the Local LLM one-by-one to prevent VRAM Out-Of-Memory (OOM) errors.
 6. **Database (PostgreSQL):** Final persistent storage for movies and AI summaries.
 
 ## 🚀 Quick Start (Docker Compose)

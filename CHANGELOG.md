@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-05-16
+### 🛡️ Data Integrity & Contracts
+- **Added:** Implemented strict JSON Data Contracts across microservices using `Pydantic`.
+- **Changed:** FastAPI endpoints now utilize `response_model` schemas, automatically generating strongly-typed Swagger UI documentation for frontend/client integration.
+- **Added:** AI Worker now validates incoming Redis payloads against the `AITaskContract` schema, catching `ValidationError` exceptions to prevent processing corrupt tasks (Safeguard pattern).
+
 ## [0.3.0] - 2026-05-15
 ### 🏗️ Infrastructure & Architecture
 - **Changed:** Upgraded system architecture to fully decoupled asynchronous task queues for LLM processing.
