@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [0.6.0] - 2026-05-16
 ### Reliability Hardening
 - **Added:** FastAPI liveness and readiness endpoints: `GET /health` and `GET /ready`.
+- **Added:** Docker Compose API healthcheck that validates `/ready`.
 - **Added:** API smoke tests for enrichment locking, Redis Stream publishing, and rollback on publish failure.
 - **Added:** Configurable approximate Redis Stream retention via `MOVIES_STREAM_MAXLEN` and `AI_STREAM_MAXLEN`.
 - **Changed:** Replaced Redis List queue operations with Redis Streams consumer groups for movie ingestion and AI enrichment tasks.
