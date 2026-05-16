@@ -1,6 +1,4 @@
-from typing import Literal, NotRequired, TypedDict
-
-OutputFormat = Literal["json", "jsonl"]
+from typing import NotRequired, TypedDict
 
 
 class Movie(TypedDict):

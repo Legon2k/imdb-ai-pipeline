@@ -1,10 +1,6 @@
-from pathlib import Path
-
 IMDB_TOP_URL = "https://www.imdb.com/chart/top/"
 MOVIE_SELECTOR = ".ipc-metadata-list-summary-item"
 EXPECTED_MOVIE_COUNT = 250
-DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data"
-DEFAULT_OUTPUT_STEM = "imdb_top_250"
 DEFAULT_RETRIES = 3
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_LOCALE = "en-US"
