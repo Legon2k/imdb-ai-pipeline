@@ -39,6 +39,7 @@ class MoviePayload(BaseModel):
     image_url: Optional[str] = Field(None, description="URL to movie poster image")
 
     model_config = ConfigDict(
+        extra='forbid',  # Reject unknown fields
         json_schema_extra={
             "example": {
                 "imdb_id": "tt0111161",
@@ -70,6 +71,7 @@ class AITaskPayload(BaseModel):
     rating: float = Field(..., ge=0, le=10, description="IMDB rating (0.0-10.0)")
 
     model_config = ConfigDict(
+        extra='forbid',  # Reject unknown fields
         json_schema_extra={
             "example": {
                 "id": 1,
@@ -106,6 +108,7 @@ class DatabaseMovie(BaseModel):
     updated_at: datetime = Field(..., description="Last update timestamp")
 
     model_config = ConfigDict(
+        extra='forbid',  # Reject unknown fields
         json_schema_extra={
             "example": {
                 "id": 1,

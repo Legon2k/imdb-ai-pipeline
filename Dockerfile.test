@@ -1,0 +1,16 @@
+# Dockerfile for contract validation tests
+# Usage: docker compose --profile test up contract-tests
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy contract definitions and tests
+COPY contracts/ /app/contracts/
+COPY requirements-test.txt /app/requirements-test.txt
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements-test.txt
+
+# Run tests with exit code
+CMD ["python", "-m", "pytest", "contracts/test_contracts.py", "-v", "--tb=short"]

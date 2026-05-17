@@ -4,9 +4,14 @@ import types
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1] / "src"
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+# Add both src directory and project root to path
+SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 class HTTPException(Exception):
@@ -31,14 +36,27 @@ def query(default, **kwargs):
     return default
 
 
+# Import real pydantic to use its actual classes for mocking
+from pydantic import BaseModel, Field, ConfigDict, ValidationError
+from typing import Optional, Literal, Any
+
 fastapi_module = types.ModuleType("fastapi")
 fastapi_module.FastAPI = FastAPI
 fastapi_module.HTTPException = HTTPException
 fastapi_module.Query = query
 responses_module = types.ModuleType("fastapi.responses")
 responses_module.StreamingResponse = object
+
+# Use real pydantic for mocking to support shared contracts
 pydantic_module = types.ModuleType("pydantic")
-pydantic_module.BaseModel = object
+pydantic_module.BaseModel = BaseModel
+pydantic_module.Field = Field
+pydantic_module.ConfigDict = ConfigDict
+pydantic_module.ValidationError = ValidationError
+pydantic_module.Optional = Optional
+pydantic_module.Literal = Literal
+pydantic_module.Any = Any
+
 asyncpg_module = types.ModuleType("asyncpg")
 pandas_module = types.ModuleType("pandas")
 redis_module = types.ModuleType("redis")

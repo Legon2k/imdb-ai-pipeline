@@ -288,7 +288,7 @@ Tests: ✓ All validation tests pass
 1. **START_HERE.md** - Quick orientation
 2. **README.md** - Complete contract documentation (500+ lines)
 3. **INTEGRATION_GUIDE.md** - Usage examples and debugging
-4. **DEPLOYMENT_CONTRACTS.md** - Step-by-step deployment plan
+4. **contracts/DEPLOYMENT_CONTRACTS.md** - Step-by-step deployment plan
 5. **CsharpContracts.cs** - Reference implementation
 6. **test_contracts.py** - Executable test suite
 7. **Inline comments** - Code documentation in all files
@@ -344,7 +344,7 @@ python -m pytest test_contracts.py -v
 - No breaking changes to existing code
 - Backward compatible (extra fields stripped, not added)
 
-**Next Step**: Follow [DEPLOYMENT_CONTRACTS.md](./DEPLOYMENT_CONTRACTS.md) for production deployment.
+**Next Step**: Follow [DEPLOYMENT_CONTRACTS.md](DEPLOYMENT_CONTRACTS.md) for production deployment.
 
 ## Benefits Achieved
 
@@ -386,7 +386,7 @@ python -m pytest test_contracts.py -v
 - `contracts/INTEGRATION_GUIDE.md`
 - `contracts/START_HERE.md`
 - `src/worker_dotnet/src/ImdbWorker.Service/Contracts.cs`
-- `DEPLOYMENT_CONTRACTS.md`
+- `contracts/DEPLOYMENT_CONTRACTS.md`
 
 ### Modified Files (5)
 - `src/worker_ai_python/src/main.py` - Use AITaskPayload
@@ -411,4 +411,4 @@ Data contracts are now **synchronized across the entire pipeline**. Services use
 For questions or issues, refer to:
 - [contracts/README.md](../contracts/README.md) - Detailed documentation
 - [contracts/INTEGRATION_GUIDE.md](../contracts/INTEGRATION_GUIDE.md) - Usage examples
-- [DEPLOYMENT_CONTRACTS.md](./DEPLOYMENT_CONTRACTS.md) - Deployment steps
+- [DEPLOYMENT_CONTRACTS.md](DEPLOYMENT_CONTRACTS.md) - Deployment steps
