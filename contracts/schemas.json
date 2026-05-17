@@ -1,0 +1,145 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IMDB AI Pipeline Data Contracts",
+  "description": "Single source of truth for all data structures across the pipeline",
+  
+  "definitions": {
+    "MoviePayload": {
+      "type": "object",
+      "title": "Movie Payload",
+      "description": "Core movie data structure used throughout the pipeline (Scraper → Redis → Workers → Database)",
+      "properties": {
+        "imdb_id": {
+          "type": "string",
+          "pattern": "^tt\\d+$",
+          "description": "IMDB identifier (e.g., 'tt0111161')"
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 250,
+          "description": "IMDB Top 250 ranking position"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Movie title"
+        },
+        "rating": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "IMDB rating (0.0-10.0)"
+        },
+        "votes": {
+          "type": "string",
+          "description": "Number of votes (stored as string for formatting, e.g., '1,234,567')"
+        },
+        "image_url": {
+          "type": ["string", "null"],
+          "format": "uri",
+          "description": "URL to movie poster image (optional, can be null)"
+        }
+      },
+      "required": ["imdb_id", "rank", "title", "rating", "votes"],
+      "additionalProperties": false
+    },
+
+    "AITaskPayload": {
+      "type": "object",
+      "title": "AI Task Payload",
+      "description": "Subset of MoviePayload used for AI enrichment tasks (API → Redis → AI Worker)",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Database movie ID (internal surrogate key)"
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 250,
+          "description": "IMDB Top 250 ranking position"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Movie title"
+        },
+        "rating": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "IMDB rating (0.0-10.0)"
+        }
+      },
+      "required": ["id", "rank", "title", "rating"],
+      "additionalProperties": false
+    },
+
+    "DatabaseMovie": {
+      "type": "object",
+      "title": "Database Movie Record",
+      "description": "Complete movie record in PostgreSQL",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Primary key (auto-generated)"
+        },
+        "imdb_id": {
+          "type": "string",
+          "pattern": "^tt\\d+$",
+          "description": "IMDB identifier"
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 250,
+          "description": "IMDB Top 250 ranking"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 255,
+          "description": "Movie title"
+        },
+        "rating": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "IMDB rating"
+        },
+        "votes": {
+          "type": "string",
+          "description": "Number of votes"
+        },
+        "image_url": {
+          "type": ["string", "null"],
+          "description": "Poster image URL"
+        },
+        "ai_summary": {
+          "type": ["string", "null"],
+          "description": "AI-generated movie summary"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "processing", "completed", "failed"],
+          "description": "Processing status"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["id", "imdb_id", "rank", "title", "rating", "votes", "status", "created_at", "updated_at"],
+      "additionalProperties": false
+    }
+  }
+}

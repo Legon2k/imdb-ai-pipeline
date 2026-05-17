@@ -1,28 +1,32 @@
-from imdb_top250_scraper.models import Movie
+"""
+Validation for scraped movie data.
 
-REQUIRED_MOVIE_FIELDS = {
-    "rank",
-    "imdb_id",
-    "title",
-    "rating",
-    "votes",
-    "votes_count",
-    "imdb_url",
-}
+Validates that movies conform to the shared MoviePayload contract.
+"""
+
+import os
+import sys
+
+from contracts import MoviePayload
+
+sys.path.insert(0, os.path.dirname(__file__))
+from imdb_top250_scraper.models import Movie
 
 
 def validate_movies(movies: list[Movie]) -> None:
+    """
+    Validates that each movie conforms to the shared MoviePayload contract.
+
+    Uses Pydantic validation from the shared contract to ensure consistency
+    across the entire pipeline.
+    """
     for index, movie in enumerate(movies, start=1):
-        missing_fields = REQUIRED_MOVIE_FIELDS - movie.keys()
-        if missing_fields:
-            fields = ", ".join(sorted(missing_fields))
-            raise ValueError(f"Movie #{index} is missing required fields: {fields}")
+        try:
+            # Validate against the shared contract
+            MoviePayload(**movie)
+        except Exception as e:
+            raise ValueError(f"Movie #{index} failed validation: {e}") from e
 
-        if movie["rank"] != index:
-            raise ValueError(f"Movie #{index} has invalid rank: {movie['rank']}")
-
-        if not movie["title"]:
-            raise ValueError(f"Movie #{index} is missing title.")
-
-        if not movie["imdb_id"]:
-            raise ValueError(f"Movie #{index} is missing IMDb ID.")
+        # Additional rank validation
+        if movie.get("rank") != index:
+            raise ValueError(f"Movie #{index} has invalid rank: {movie.get('rank')}")

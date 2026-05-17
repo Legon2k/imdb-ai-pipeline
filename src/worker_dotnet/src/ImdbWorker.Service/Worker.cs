@@ -1,22 +1,15 @@
 // --- START OF FILE Worker.cs ---
+// Shared data contracts are defined in ImdbWorker.Contracts namespace
+// See contracts/CsharpContracts.cs for single source of truth
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Dapper;
 using Npgsql;
 using StackExchange.Redis;
+using ImdbWorker.Contracts;
 
 namespace ImdbWorker.Service;
-
-// 1. Data Contract (Matches the Python JSON payload exactly)
-public record MoviePayload(
-    [property: JsonPropertyName("imdb_id")] string ImdbId,
-    [property: JsonPropertyName("rank")] int Rank,
-    [property: JsonPropertyName("title")] string Title,
-    [property: JsonPropertyName("rating")] decimal Rating,
-    [property: JsonPropertyName("votes")] string Votes,
-    [property: JsonPropertyName("image_url")] string? ImageUrl
-);
 
 public class Worker : BackgroundService
 {
@@ -131,6 +124,18 @@ public class Worker : BackgroundService
         if (movie == null)
         {
             _logger.LogWarning("Skipping stream entry {MessageId}: empty movie payload", entry.Id);
+            await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
+            return;
+        }
+
+        // Validate the movie against contract constraints
+        try
+        {
+            movie.Validate();
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Skipping stream entry {MessageId}: contract validation failed", entry.Id);
             await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
             return;
         }

@@ -1,13 +1,18 @@
 import asyncio
 import logging
 import os
+import sys
 from time import perf_counter
 
 import httpx
 import asyncpg
 import redis.asyncio as redis
 from redis.exceptions import ResponseError
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
+
+# Add parent directory to path to import shared contracts
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../"))
+from contracts import AITaskPayload
 
 # System configurations
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
@@ -29,19 +34,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 LOGGER = logging.getLogger("imdb_ai_worker")
-
-
-# --- DATA CONTRACT (Pydantic) ---
-class AITaskContract(BaseModel):
-    """
-    Strict data contract for incoming AI tasks from Redis.
-    Validates that the JSON payload contains all required fields with correct types.
-    """
-
-    id: int
-    rank: int
-    title: str
-    rating: float
 
 
 async def ensure_consumer_group(redis_client: redis.Redis) -> None:
@@ -115,7 +107,7 @@ async def main():
     timeout = httpx.Timeout(LLM_TIMEOUT_SECONDS, connect=10.0)
     async with httpx.AsyncClient(timeout=timeout) as http_client:
         while True:
-            task: AITaskContract | None = None
+            task: AITaskPayload | None = None
             message_id: str | None = None
             try:
                 result = await read_stream_message(redis_client)
@@ -144,8 +136,8 @@ async def main():
 
                 # ---> PYDANTIC VALIDATION <---
                 try:
-                    # Validate the raw JSON string against our strict contract
-                    task = AITaskContract.model_validate_json(message)
+                    # Validate the raw JSON string against our strict contract (from contracts/schemas.json)
+                    task = AITaskPayload.model_validate_json(message)
                 except ValidationError as ve:
                     LOGGER.warning(
                         "event=contract_violation stream=%s group=%s consumer=%s message_id=%s error=%r",

@@ -219,10 +219,6 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# IMDb scraper output
-
-data/
-imdb_top_250.json
 *.tar
 
 # Visual Studio (IDE) workspace and temporary files

@@ -1,9 +1,9 @@
 import io
 import json
 import os
+import sys
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any
-from datetime import datetime
 
 import asyncpg
 import pandas as pd
@@ -11,6 +11,10 @@ import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+# Add parent directory to path to import shared contracts
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../"))
+from contracts import DatabaseMovie
 
 # Global variables to hold our connections
 db_pool = None
@@ -20,17 +24,17 @@ AI_STREAM_MAXLEN = int(os.getenv("AI_STREAM_MAXLEN", "1000"))
 
 
 # --- API DATA CONTRACTS (Pydantic) ---
-class MovieResponse(BaseModel):
-    """Data contract for the API response."""
+# Use DatabaseMovie from contracts for GET /movies response
+# MoviePayload and AITaskPayload are used internally for Redis operations
 
-    id: int
-    imdb_id: str
-    rank: int
-    title: str
-    rating: float
-    votes: str
-    status: str
-    updated_at: datetime
+
+class MovieResponse(DatabaseMovie):
+    """
+    API response model for GET /movies.
+    Extends DatabaseMovie to match database schema.
+    """
+
+    pass
 
 
 class EnrichmentResponse(BaseModel):
