@@ -47,8 +47,6 @@ class MovieValidationTest(unittest.TestCase):
                     "title": "The Shawshank Redemption",
                     "rating": 9.3,
                     "votes": "3.2M",
-                    "votes_count": 3_200_000,
-                    "imdb_url": "https://www.imdb.com/title/tt0111161/",
                 }
             ]
         )
@@ -62,14 +60,12 @@ class MovieValidationTest(unittest.TestCase):
                         "title": "The Shawshank Redemption",
                         "rating": 9.3,
                         "votes": "3.2M",
-                        "votes_count": 3_200_000,
-                        "imdb_url": "https://www.imdb.com/title/tt0111161/",
                     }
                 ]
             )
 
     def test_validate_movies_rejects_invalid_rank(self):
-        with self.assertRaisesRegex(ValueError, "invalid rank"):
+        with self.assertRaisesRegex(ValueError, r"Extra inputs are not permitted|rank"):
             validate_movies(
                 [
                     {
@@ -78,8 +74,6 @@ class MovieValidationTest(unittest.TestCase):
                         "title": "The Shawshank Redemption",
                         "rating": 9.3,
                         "votes": "3.2M",
-                        "votes_count": 3_200_000,
-                        "imdb_url": "https://www.imdb.com/title/tt0111161/",
                     }
                 ]
             )

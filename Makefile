@@ -13,7 +13,7 @@ install-test:
 	python -m pip install -r requirements-test.txt
 
 test:
-	python -B -m unittest discover -s src/scraper_python/tests
+	python -B -m unittest discover -s src/scraper_python/tests -t src/scraper_python
 	python -B -m unittest discover -s src/api_fastapi/tests
 
 test-contracts:
