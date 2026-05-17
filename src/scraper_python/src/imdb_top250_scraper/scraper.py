@@ -42,7 +42,10 @@ async def extract_movies(
     include_images: bool = True,
     limit: int | None = None,
 ) -> list[Movie]:
-    """Extracts raw movie data from the DOM and formats it."""
+    """
+    Extracts raw movie data from the DOM and formats it according
+    to the shared MoviePayload contract.
+    """
     movies = page.locator(MOVIE_SELECTOR)
 
     raw_movies = await movies.evaluate_all(
@@ -73,13 +76,22 @@ async def extract_movies(
     results: list[Movie] = []
     for movie in raw_movies:
         rating, votes, votes_count = parse_rating(movie.pop("rating_text"))
-        movie["imdb_id"] = extract_imdb_id(movie.get("imdb_url"))
-        movie["rating"] = rating
-        movie["votes"] = votes
-        movie["votes_count"] = votes_count
-        if not include_images:
-            movie.pop("image_url", None)
-        results.append(movie)
+        imdb_id = extract_imdb_id(movie.get("imdb_url"))
+
+        # Map to shared MoviePayload contract - only keep required fields
+        movie_payload: Movie = {
+            "imdb_id": imdb_id,
+            "rank": movie["rank"],
+            "title": movie["title"],
+            "rating": rating,
+            "votes": votes,
+        }
+
+        # Add optional image_url if requested and available
+        if include_images and movie.get("image_url"):
+            movie_payload["image_url"] = movie["image_url"]
+
+        results.append(movie_payload)
 
     validate_movies(results)
     return results

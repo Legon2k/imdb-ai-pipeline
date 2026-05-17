@@ -140,7 +140,22 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - internal_network      
+      - internal_network
+
+  # ==========================================
+  # 6. CONTRACT VALIDATION (Tests)
+  # ==========================================
+  contract-tests:
+    container_name: imdb_contract_tests
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    env_file:
+      - .env
+    networks:
+      - internal_network
+    profiles:
+      - test
 
 networks:
   internal_network:
