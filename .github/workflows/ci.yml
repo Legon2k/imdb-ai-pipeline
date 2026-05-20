@@ -25,29 +25,41 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      # Install and configure uv with native automatic caching mechanisms
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      # Synchronize python scraper environment using localized uv toolchain
+      - name: Install scraper dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r src/scraper_python/requirements-dev.txt
-          pip install -r requirements-test.txt
+          uv sync --project src/scraper_python
 
+      # Handle traditional legacy dependencies for API and contract testing
+      - name: Install legacy and test dependencies
+        run: |
+          uv pip install -r requirements-test.txt
+          uv pip install jsonschema pytest
+
+      # Lint check using uv execution context inside the scraper folder
       - name: Ruff lint
-        run: ruff check .
+        run: uv run --project src/scraper_python ruff check .
 
+      # Format validation using uv execution context inside the scraper folder
       - name: Ruff format check
-        run: ruff format --check .
+        run: uv run --project src/scraper_python ruff format --check .
 
+      # Unit tests executed via uv runtime environment wrapper
       - name: Scraper unit tests
-        run: python -m unittest discover -s src/scraper_python/tests -t src/scraper_python
+        run: uv run --project src/scraper_python python -m unittest discover -s src/scraper_python/tests -t src/scraper_python
 
       - name: API smoke tests
-        run: python -m unittest discover -s src/api_fastapi/tests
-
-      - name: Install contract test dependencies
-        run: pip install jsonschema
+        run: uv run python -m unittest discover -s src/api_fastapi/tests
 
       - name: Contract sync tests
-        run: python -m pytest contracts/test_contracts.py -v --tb=short
+        run: uv run pytest contracts/test_contracts.py -v --tb=short
 
   dotnet-checks:
     name: .NET 10 Build Check

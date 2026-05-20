@@ -1,14 +1,20 @@
+# Use the official Playwright Python image as the base
 FROM mcr.microsoft.com/playwright/python:v1.59.0-noble
+
+# Copy the uv binary directly from the official image (multi-stage build)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy dependency definition files first to leverage Docker layer caching
+COPY pyproject.toml uv.lock ./
 
-# Copy package sources from the new src layout
-COPY src/imdb_top.py ./imdb_top.py
-COPY src/imdb_top250_scraper ./imdb_top250_scraper
+# Install project dependencies globally inside the container using uv
+# --system forces uv to install packages into the system Python environment
+RUN uv sync --frozen --no-dev
 
-RUN mkdir -p /data
+# Copy the rest of the application source code
+COPY . .
 
-ENTRYPOINT ["python", "imdb_top.py"]
+# Set the execution entry point inside the scraper folder structure
+ENTRYPOINT ["uv", "run", "python", "src/imdb_top250_scraper/cli.py"]

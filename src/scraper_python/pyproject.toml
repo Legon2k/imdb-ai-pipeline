@@ -1,29 +1,53 @@
 [project]
 name = "imdb-top250-scraper"
 version = "0.1.0"
-description = "Scrape the IMDb Top 250 chart and publish movie payloads to Redis."
+description = "Scrape the IMDb Top 250 chart and publish movie payloads to Redis Streams."
 readme = "README.md"
 requires-python = ">=3.11"
+
+# Production dependencies required for the scraper execution
 dependencies = [
-    "playwright==1.59.0",
+    "playwright==1.59.0", # Async DOM extraction engine
+    "redis==5.0.3",       # Redis client to execute XADD commands for streaming data
+    "pydantic>=2.6.0",    # Data contracts to validate raw scraped data before publishing
 ]
 
 [project.scripts]
 imdb-top250-scraper = "imdb_top250_scraper.cli:run"
 
-[project.optional-dependencies]
+# Development toolchain configuration isolated using uv dependency groups
+[dependency-groups]
 dev = [
-    "ruff>=0.14,<1",
+    "ruff>=0.14,<1",        # Fast linter and formatter to keep code style consistent
+    "mypy>=1.9.0",        # Static type checker for strict enterprise type safety
+    "playwright==1.59.0",
+    "redis==5.0.3",
 ]
 
 [tool.ruff]
+# Layout configuration matching your project standards
 line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
+# Selected rule groups for strict enterprise code quality
+# E/F: Pyflakes and Core Error lints
+# I: Isort for deterministic import sorting
+# UP: Pyupgrade to enforce modern Python syntax
+# B: Flake8-bugbear to catch design flaws and common footguns
+# SIM: Flake8-simplify to enforce clean, readable code structures
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.format]
+# Formatting styles applied across all python files during 'uv run ruff format'
 quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
+
+[tool.mypy]
+# Static analysis setup to guarantee type definitions are valid
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true      # Forces explicit type definitions on all functions
+disallow_incomplete_defs = true   # Prevents partial type definitions
