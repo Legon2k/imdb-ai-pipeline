@@ -38,10 +38,11 @@ jobs:
           uv sync --project src/scraper_python
 
       # Handle traditional legacy dependencies for API and contract testing
+# Handle traditional legacy dependencies for API and contract testing
       - name: Install legacy and test dependencies
         run: |
-          uv pip install -r requirements-test.txt
-          uv pip install jsonschema pytest
+          uv pip install --python src/scraper_python/.venv -r requirements-test.txt
+          uv pip install --python src/scraper_python/.venv jsonschema pytest
 
       # Lint check using uv execution context inside the scraper folder
       - name: Ruff lint
@@ -56,10 +57,10 @@ jobs:
         run: uv run --project src/scraper_python python -m unittest discover -s src/scraper_python/tests -t src/scraper_python
 
       - name: API smoke tests
-        run: uv run python -m unittest discover -s src/api_fastapi/tests
+        run: src/scraper_python/.venv/bin/python -m unittest discover -s src/api_fastapi/tests
 
       - name: Contract sync tests
-        run: uv run pytest contracts/test_contracts.py -v --tb=short
+        run: src/scraper_python/.venv/bin/pytest contracts/test_contracts.py -v --tb=short
 
   dotnet-checks:
     name: .NET 10 Build Check
