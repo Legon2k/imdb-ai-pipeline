@@ -4,11 +4,11 @@ import os
 import sys
 from time import perf_counter
 
-import httpx
 import asyncpg
+import httpx
 import redis.asyncio as redis
-from redis.exceptions import ResponseError
 from pydantic import ValidationError
+from redis.exceptions import ResponseError
 
 # Add parent directory to path to import shared contracts
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../"))
@@ -103,9 +103,7 @@ async def main():
     db_pool = await asyncpg.create_pool(
         user=PG_USER, password=PG_PASS, database=PG_DB, host=PG_HOST, port=5432
     )
-    LOGGER.info(
-        "event=postgres_connected host=%s port=%s database=%s", PG_HOST, 5432, PG_DB
-    )
+    LOGGER.info("event=postgres_connected host=%s port=%s database=%s", PG_HOST, 5432, PG_DB)
 
     # Local LLMs can be slow, but each request still needs an upper bound.
     timeout = httpx.Timeout(LLM_TIMEOUT_SECONDS, connect=10.0)
@@ -122,7 +120,8 @@ async def main():
                 message = fields.get(PAYLOAD_FIELD)
                 if not message:
                     LOGGER.warning(
-                        "event=message_missing_payload stream=%s group=%s consumer=%s message_id=%s field=%s",
+                        "event=message_missing_payload stream=%s group=%s consumer=%s "
+                        "message_id=%s field=%s",
                         STREAM_NAME,
                         CONSUMER_GROUP,
                         CONSUMER_NAME,
@@ -131,7 +130,8 @@ async def main():
                     )
                     await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
                     LOGGER.info(
-                        "event=message_acked stream=%s group=%s message_id=%s reason=missing_payload",
+                        "event=message_acked stream=%s group=%s message_id=%s "
+                        "reason=missing_payload",
                         STREAM_NAME,
                         CONSUMER_GROUP,
                         message_id,
@@ -140,11 +140,12 @@ async def main():
 
                 # ---> PYDANTIC VALIDATION <---
                 try:
-                    # Validate the raw JSON string against our strict contract (from contracts/schemas.json)
+                    # Validate raw JSON against strict contract (contracts/schemas.json)
                     task = AITaskPayload.model_validate_json(message)
                 except ValidationError as ve:
                     LOGGER.warning(
-                        "event=contract_violation stream=%s group=%s consumer=%s message_id=%s error=%r",
+                        "event=contract_violation stream=%s group=%s consumer=%s "
+                        "message_id=%s error=%r",
                         STREAM_NAME,
                         CONSUMER_GROUP,
                         CONSUMER_NAME,
@@ -153,7 +154,8 @@ async def main():
                     )
                     await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
                     LOGGER.info(
-                        "event=message_acked stream=%s group=%s message_id=%s reason=contract_violation",
+                        "event=message_acked stream=%s group=%s message_id=%s "
+                        "reason=contract_violation",
                         STREAM_NAME,
                         CONSUMER_GROUP,
                         message_id,
@@ -161,7 +163,8 @@ async def main():
                     continue  # Skip invalid payloads
 
                 LOGGER.info(
-                    "event=task_started stream=%s group=%s consumer=%s message_id=%s movie_id=%s rank=%s title=%r",
+                    "event=task_started stream=%s group=%s consumer=%s message_id=%s "
+                    "movie_id=%s rank=%s title=%r",
                     STREAM_NAME,
                     CONSUMER_GROUP,
                     CONSUMER_NAME,
@@ -171,7 +174,10 @@ async def main():
                     task.title,
                 )
 
-                prompt = f"Write a short, engaging 1-sentence summary for the famous movie '{task.title}' (IMDB Rating: {task.rating}). Do not include any intro, just the summary."
+                prompt = (
+                    f"Write a 1-sentence summary for the movie '{task.title}' "
+                    f"(IMDB Rating: {task.rating}). No intro, just the summary."
+                )
                 payload = {"model": LLM_MODEL, "prompt": prompt, "stream": False}
 
                 # Request LLM
@@ -187,13 +193,15 @@ async def main():
                 # Update DB to 'completed'
                 async with db_pool.acquire() as conn:
                     await conn.execute(
-                        "UPDATE movies SET ai_summary = $1, status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $2;",
+                        "UPDATE movies SET ai_summary = $1, status = 'completed', "
+                        "updated_at = CURRENT_TIMESTAMP WHERE id = $2;",
                         summary,
                         task.id,
                     )
                 await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
                 LOGGER.info(
-                    "event=task_completed stream=%s group=%s consumer=%s message_id=%s movie_id=%s rank=%s llm_duration_ms=%s summary_chars=%s",
+                    "event=task_completed stream=%s group=%s consumer=%s message_id=%s "
+                    "movie_id=%s rank=%s llm_duration_ms=%s summary_chars=%s",
                     STREAM_NAME,
                     CONSUMER_GROUP,
                     CONSUMER_NAME,
@@ -206,7 +214,8 @@ async def main():
 
             except Exception as e:
                 LOGGER.exception(
-                    "event=task_failed stream=%s group=%s consumer=%s message_id=%s movie_id=%s error=%r",
+                    "event=task_failed stream=%s group=%s consumer=%s message_id=%s "
+                    "movie_id=%s error=%r",
                     STREAM_NAME,
                     CONSUMER_GROUP,
                     CONSUMER_NAME,
@@ -221,7 +230,8 @@ async def main():
                     try:
                         async with db_pool.acquire() as conn:
                             await conn.execute(
-                                "UPDATE movies SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE id = $1;",
+                                "UPDATE movies SET status = 'pending', "
+                                "updated_at = CURRENT_TIMESTAMP WHERE id = $1;",
                                 task.id,
                             )
                         LOGGER.info(
@@ -231,11 +241,10 @@ async def main():
                             task.title,
                         )
                         if message_id is not None:
-                            await redis_client.xack(
-                                STREAM_NAME, CONSUMER_GROUP, message_id
-                            )
+                            await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
                             LOGGER.info(
-                                "event=message_acked stream=%s group=%s message_id=%s reason=task_reverted",
+                                "event=message_acked stream=%s group=%s message_id=%s "
+                                "reason=task_reverted",
                                 STREAM_NAME,
                                 CONSUMER_GROUP,
                                 message_id,
