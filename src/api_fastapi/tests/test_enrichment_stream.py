@@ -182,9 +182,7 @@ class EnrichmentStreamTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(redis_client.transaction)
         self.assertEqual(len(redis_client.pipeline_instance.xadd_calls), 2)
 
-        stream_name, fields, maxlen, approximate = (
-            redis_client.pipeline_instance.xadd_calls[0]
-        )
+        stream_name, fields, maxlen, approximate = redis_client.pipeline_instance.xadd_calls[0]
         self.assertEqual(stream_name, "ai_stream_test")
         self.assertEqual(maxlen, 25)
         self.assertTrue(approximate)

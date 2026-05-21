@@ -148,9 +148,7 @@ async def get_movies(limit: int = 50, offset: int = 0):
     Retrieves a list of processed movies from the PostgreSQL database.
     """
     if not db_pool:
-        raise HTTPException(
-            status_code=500, detail="Database connection is not initialized."
-        )
+        raise HTTPException(status_code=500, detail="Database connection is not initialized.")
 
     query = """
         SELECT id, imdb_id, rank, title, rating, votes, status, updated_at 
@@ -169,9 +167,7 @@ async def export_movies_to_excel():
     including the AI-generated summaries. Perfect for business clients.
     """
     if not db_pool:
-        raise HTTPException(
-            status_code=500, detail="Database connection is not initialized."
-        )
+        raise HTTPException(status_code=500, detail="Database connection is not initialized.")
 
     query = "SELECT rank, title, rating, votes, status, ai_summary FROM movies ORDER BY rank ASC;"
     async with db_pool.acquire() as connection:
@@ -218,9 +214,7 @@ async def recover_stuck_movies(stuck_minutes: int = Query(default=10, ge=1, le=1
     to 'pending' so they can be picked up again by the AI enrichment trigger.
     """
     if not db_pool:
-        raise HTTPException(
-            status_code=500, detail="Database connection is not initialized."
-        )
+        raise HTTPException(status_code=500, detail="Database connection is not initialized.")
 
     recover_query = """
         UPDATE movies 
@@ -255,9 +249,7 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
     Returns HTTP 202 Accepted instantly.
     """
     if not db_pool or not redis_client:
-        raise HTTPException(
-            status_code=500, detail="Infrastructure connections are not ready."
-        )
+        raise HTTPException(status_code=500, detail="Infrastructure connections are not ready.")
 
     lock_query = """
         WITH selected AS (
