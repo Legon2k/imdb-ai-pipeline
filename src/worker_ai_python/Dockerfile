@@ -16,6 +16,6 @@ RUN uv sync --frozen
 
 # Copy source code and contracts
 COPY ./src/worker_ai_python/src ./src
-COPY ./contracts ./contracts
+COPY ./src/contracts ./src/contracts
 
 CMD ["uv", "run", "python", "src/main.py"]
