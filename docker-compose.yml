@@ -87,6 +87,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    volumes:
+      - ./VERSION:/app/VERSION:ro        
     networks:
       - internal_network
 
@@ -108,6 +110,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - ./VERSION:/app/VERSION:ro  # :ro means Read-Only        
     networks:
       - internal_network
     healthcheck:

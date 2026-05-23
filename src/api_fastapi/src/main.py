@@ -86,13 +86,21 @@ async def lifespan(app: FastAPI):
             await redis_client.aclose()
 
 
+def get_app_version() -> str:
+    """Reads the application version from the root VERSION file."""
+    try:
+        with open("/app/VERSION", "r") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return "0.0.0-dev"
+
 app = FastAPI(
     title="IMDB AI Pipeline API",
     description=(
         "API Gateway for accessing processed IMDB movie data, "
         "triggering AI tasks, and self-healing."
     ),
-    version="3.0.0",
+    version=get_app_version(), # <--- Now it dynamically reads from the file!
     lifespan=lifespan,
 )
 

@@ -33,8 +33,14 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Read version from the mapped VERSION file
+        var version = File.Exists("/app/VERSION") 
+            ? await File.ReadAllTextAsync("/app/VERSION", stoppingToken) 
+            : "0.0.0-dev";
+
         _logger.LogInformation(
-            "IMDB Worker started. Listening to stream {StreamName} as {ConsumerGroup}/{ConsumerName}",
+            "IMDB Worker v{Version} started. Listening to stream {StreamName} as {ConsumerGroup}/{ConsumerName}",
+            version,
             _streamName,
             _consumerGroup,
             _consumerName
