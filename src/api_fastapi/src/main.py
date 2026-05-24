@@ -89,10 +89,11 @@ async def lifespan(app: FastAPI):
 def get_app_version() -> str:
     """Reads the application version from the root VERSION file."""
     try:
-        with open("/app/VERSION", "r") as f:
+        with open("/app/VERSION") as f:
             return f.read().strip()
     except FileNotFoundError:
         return "0.0.0-dev"
+
 
 app = FastAPI(
     title="IMDB AI Pipeline API",
@@ -100,7 +101,7 @@ app = FastAPI(
         "API Gateway for accessing processed IMDB movie data, "
         "triggering AI tasks, and self-healing."
     ),
-    version=get_app_version(), # <--- Now it dynamically reads from the file!
+    version=get_app_version(),  # <--- Now it dynamically reads from the file!
     lifespan=lifespan,
 )
 
@@ -159,7 +160,9 @@ async def get_movies(limit: int = 50, offset: int = 0):
         raise HTTPException(status_code=500, detail="Database connection is not initialized.")
 
     query = """
-        SELECT id, imdb_id, rank, title, rating, votes, image_url, ai_summary, status, created_at, updated_at 
+        SELECT
+            id, imdb_id, rank, title, rating, votes, image_url, ai_summary,
+            status, created_at, updated_at
         FROM movies ORDER BY rank ASC LIMIT $1 OFFSET $2;
     """
     async with db_pool.acquire() as connection:
