@@ -9,8 +9,8 @@ WORKDIR /app
 # Copy dependency definition files first to leverage Docker layer caching
 COPY src/scraper_python/pyproject.toml src/scraper_python/uv.lock ./
 
-# Copy the contracts package so dependencies can resolve it
-COPY src/contracts ../contracts
+# Copy the contracts package to /contracts so relative path resolution works
+COPY src/contracts /contracts
 
 # Install project dependencies globally inside the container using uv
 # --system forces uv to install packages into the system Python environment
@@ -19,8 +19,9 @@ RUN uv sync --frozen --no-dev
 # Copy the rest of the scraper application source code
 COPY src/scraper_python . 
 
-# Install the local package in editable mode so all modules are importable
-RUN uv pip install -e . --system
+# Update pyproject.toml to use absolute path for Docker, then install
+RUN sed -i 's|file://../contracts|file:///contracts|g' pyproject.toml && \
+    cd /app && uv pip install -e . --system
 
 # Set the execution entry point using the installed console script
 ENTRYPOINT ["imdb-top250-scraper"]
