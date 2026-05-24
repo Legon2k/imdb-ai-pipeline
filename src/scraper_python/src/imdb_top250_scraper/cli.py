@@ -14,6 +14,7 @@ from imdb_top250_scraper.scraper import scrape_imdb_top_250
 
 LOGGER = logging.getLogger(__name__)
 
+
 def get_app_version() -> str:
     """Reads the application version from the root VERSION file."""
     try:
@@ -21,6 +22,7 @@ def get_app_version() -> str:
             return f.read().strip()
     except FileNotFoundError:
         return "0.0.0-dev"
+
 
 def positive_int(value: str) -> int:
     """Validates that the CLI argument is a positive integer."""
@@ -35,7 +37,8 @@ def parse_args() -> argparse.Namespace:
     version = get_app_version()
 
     parser = argparse.ArgumentParser(
-        description=f"Scrape IMDb Top 250 movies and push to Redis. Version: {version}")
+        description=f"Scrape IMDb Top 250 movies and push to Redis. Version: {version}"
+    )
 
     # File output arguments (--output, --format, --pretty) were removed
     # since we now use a message broker (Redis) for data ingestion.
