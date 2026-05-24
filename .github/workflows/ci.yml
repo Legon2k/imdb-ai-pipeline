@@ -32,23 +32,13 @@ jobs:
           version: "latest"
           enable-cache: true
 
-      # Synchronize python scraper environment using localized uv toolchain
-      - name: Install scraper dependencies
+      # Synchronize all python project environments using localized uv toolchain
+      - name: Install all dependencies
         run: |
-          uv sync --project src/scraper_python
-
-      # Synchronize API FastAPI environment
-      - name: Install API dependencies
-        run: |
-          uv sync --project src/api_fastapi
-
-      # Handle test dependencies for contracts
-      - name: Install test dependencies
-        run: |
-          uv sync --project src/contracts
+          uv sync
 
       # Lint check using uv execution context inside the scraper folder
-      - name: Ruff lint
+      - name: Ruff lint (scraper)
         run: uv run --project src/scraper_python ruff check .
 
       # Format validation using uv execution context inside the scraper folder

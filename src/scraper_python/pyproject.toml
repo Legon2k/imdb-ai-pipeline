@@ -10,11 +10,14 @@ dependencies = [
     "playwright==1.59.0", # Async DOM extraction engine
     "redis==5.0.3",       # Redis client to execute XADD commands for streaming data
     "pydantic>=2.6.0",    # Data contracts to validate raw scraped data before publishing
-    "imdb-contracts @ file://../contracts",  # Local package with data contracts
+    "imdb-contracts",     # Local workspace package with data contracts
 ]
 
 [project.scripts]
 imdb-top250-scraper = "imdb_top250_scraper.cli:run"
+
+[tool.uv.sources]
+imdb-contracts = { workspace = true }
 
 # Development toolchain configuration isolated using uv dependency groups
 [dependency-groups]

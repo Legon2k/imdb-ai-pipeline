@@ -1,0 +1,14 @@
+[tool.uv]
+# Define a workspace containing all local packages
+workspace.members = [
+    "src/contracts",
+    "src/scraper_python",
+    "src/api_fastapi",
+    "src/worker_ai_python",
+]
+
+# This is a workspace root, not a package itself
+[project]
+name = "imdb-ai-pipeline"
+version = "0.1.0"
+description = "IMDb Top 250 scraper with AI enrichment pipeline"

@@ -4,24 +4,17 @@ FROM mcr.microsoft.com/playwright/python:v1.59.0-noble
 # Copy the uv binary directly from the official image (multi-stage build)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# Set the working directory to the /app
 WORKDIR /app
 
-# Copy dependency definition files first to leverage Docker layer caching
-COPY src/scraper_python/pyproject.toml src/scraper_python/uv.lock ./
+# Copy the entire project to the container
+COPY . .
 
-# Copy the contracts package to /contracts so relative path resolution works
-COPY src/contracts /contracts
+# Install the contracts package globally
+RUN uv pip install src/contracts --system
 
-# Install project dependencies globally inside the container using uv
-# --system forces uv to install packages into the system Python environment
-RUN uv sync --frozen --no-dev
-
-# Copy the rest of the scraper application source code
-COPY src/scraper_python . 
-
-# Update pyproject.toml to use absolute path for Docker, then install
-RUN sed -i 's|file://../contracts|file:///contracts|g' pyproject.toml && \
-    cd /app && uv pip install -e . --system
+# Install the scraper package globally in editable mode
+RUN uv pip install -e src/scraper_python --system
 
 # Set the execution entry point using the installed console script
 ENTRYPOINT ["imdb-top250-scraper"]
