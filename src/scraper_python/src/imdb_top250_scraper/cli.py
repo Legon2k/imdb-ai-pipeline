@@ -14,6 +14,13 @@ from imdb_top250_scraper.scraper import scrape_imdb_top_250
 
 LOGGER = logging.getLogger(__name__)
 
+def get_app_version() -> str:
+    """Reads the application version from the root VERSION file."""
+    try:
+        with open("/app/VERSION") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return "0.0.0-dev"
 
 def positive_int(value: str) -> int:
     """Validates that the CLI argument is a positive integer."""
@@ -25,7 +32,10 @@ def positive_int(value: str) -> int:
 
 def parse_args() -> argparse.Namespace:
     """Parses command line arguments for the scraper."""
-    parser = argparse.ArgumentParser(description="Scrape IMDb Top 250 movies and push to Redis.")
+    version = get_app_version()
+
+    parser = argparse.ArgumentParser(
+        description=f"Scrape IMDb Top 250 movies and push to Redis. Version: {version}")
 
     # File output arguments (--output, --format, --pretty) were removed
     # since we now use a message broker (Redis) for data ingestion.
@@ -76,6 +86,8 @@ async def main() -> None:
     """Main async entry point."""
     args = parse_args()
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
+
+    LOGGER.info(f"Scraping IMDb starting. Version: {get_app_version()}.")
 
     # Call the scraper without file output arguments
     movies = await scrape_imdb_top_250(
