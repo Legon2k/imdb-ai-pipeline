@@ -84,7 +84,20 @@ async def read_stream_message(redis_client: redis.Redis):
     return messages[0]
 
 
+def get_app_version() -> str:
+    """Reads the application version from the root VERSION file."""
+    try:
+        with open("/app/VERSION") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return "0.0.0-dev"
+
+
 async def main():
+    LOGGER.info(
+        f"IMDb AI Worker starting up v{get_app_version()}. Connecting to Redis and PostgreSQL..."
+    )
+
     LOGGER.info(
         "event=worker_started stream=%s group=%s consumer=%s model=%s timeout_seconds=%s",
         STREAM_NAME,
