@@ -159,7 +159,7 @@ async def get_movies(limit: int = 50, offset: int = 0):
         raise HTTPException(status_code=500, detail="Database connection is not initialized.")
 
     query = """
-        SELECT id, imdb_id, rank, title, rating, votes, status, updated_at 
+        SELECT id, imdb_id, rank, title, rating, votes, image_url, ai_summary, status, created_at, updated_at 
         FROM movies ORDER BY rank ASC LIMIT $1 OFFSET $2;
     """
     async with db_pool.acquire() as connection:
