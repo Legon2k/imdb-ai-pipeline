@@ -19,7 +19,7 @@ services:
       - internal_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
+      interval: 10s                  # Changed: lighter interval for homelab
       timeout: 5s
       retries: 5
 
@@ -64,6 +64,7 @@ services:
       dockerfile: src/scraper_python/Dockerfile
     env_file:
       - .env
+    # restart: unless-stopped        # Commented: manual control in homelab
     depends_on:
       redis:
         condition: service_healthy
@@ -71,6 +72,7 @@ services:
       - ./VERSION:/app/VERSION:ro        
     networks:
       - internal_network
+    profiles: ["scraper"]           # Added: manual start only
 
   # ==========================================
   # 3. BACKGROUND WORKERS (.NET 10)
@@ -83,7 +85,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    # Worker needs both Redis and Postgres to be healthy before starting
     depends_on:
       redis:
         condition: service_healthy
@@ -94,7 +95,7 @@ services:
     networks:
       - internal_network
 
-# ==========================================
+  # ==========================================
   # 4. API GATEWAY (FastAPI)
   # ==========================================
   api:
@@ -113,7 +114,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./VERSION:/app/VERSION:ro  # :ro means Read-Only        
+      - ./VERSION:/app/VERSION:ro        
     networks:
       - internal_network
     healthcheck:
@@ -129,7 +130,7 @@ services:
       retries: 5
       start_period: 10s
 
-# ==========================================
+  # ==========================================
   # 5. AI BACKGROUND WORKER (Python)
   # ==========================================
   worker_ai:
@@ -151,9 +152,9 @@ services:
       - internal_network
 
   # ==========================================
-  # 6. CONTRACT VALIDATION (Tests)
+  # 6. CONTRACT TESTS (Manual)
   # ==========================================
-  contract-tests:
+  contract-tests:                    # Restored: but manual only
     container_name: imdb_contract_tests
     build:
       context: .
@@ -162,8 +163,23 @@ services:
       - .env
     networks:
       - internal_network
-    profiles:
-      - test
+    profiles: ["test"]               # Added: runs only with --profile test
+
+  # ==========================================
+  # 7. UTILITY SERVICES (Added for Homelab)
+  # ==========================================
+  portainer:                         # Added: convenient web UI for Docker management
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - internal_network
 
 networks:
   internal_network:
@@ -172,3 +188,4 @@ networks:
 volumes:
   pg_data:
   redis_data:
+  portainer_data:                    # Added: persistent volume for Portainer

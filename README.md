@@ -70,12 +70,13 @@ graph TD
 
 The easiest way to run the entire microservice architecture is using Docker Compose.
 
-**1. Start the Infrastructure, Workers, and API**
+**1. Start the Infrastructure, Workers, and API** (without scraper)
 ```bash
-docker compose up -d postgres redis redis-insight worker api worker_ai
+docker compose up -d
 ```
 
 **2. Access the UIs**
+- **Portainer:** [http://192.168.2.50:9000](http://192.168.2.50:9000) (Docker Management)
 - **Redis Insight:** [http://localhost:5540](http://localhost:5540) (Monitor Redis Streams)
 - **FastAPI Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs) (API Endpoints)
 - **API Health:** [http://localhost:8000/health](http://localhost:8000/health)
@@ -83,7 +84,7 @@ docker compose up -d postgres redis redis-insight worker api worker_ai
 
 **3. Run the Scraper (Data Ingestion)**
 ```bash
-docker compose start scraper
+docker compose --profile scraper up -d scraper
 ```
 The `.NET worker` will pick up payloads from `movies_stream`, save them to PostgreSQL with a `pending` status, and acknowledge each processed stream entry.
 
@@ -117,9 +118,20 @@ Set `LOG_LEVEL` in `.env` to control Python worker log verbosity. The default is
 Business users can download a complete report containing movie data and AI-generated summaries in Excel format (`.xlsx`) by navigating to:
 [http://localhost:8000/movies/export](http://localhost:8000/movies/export)
 
+## 🔧 Homelab / Proxmox Notes##
+
+`scraper` and `contract-tests` are configured with profiles — they do not start automatically.
+`portainer` service was added for convenient visual Docker management.
+Use `docker compose ps` to check the status of services.
+
 ## 🧪 Tests & Code Quality
 
-Run tests:
+Run tests via Docker:
+```powershell
+docker compose --profile test up contract-tests
+```
+
+Run tests localy:
 ```powershell
 python -B -m unittest discover -s src/scraper_python/tests
 python -B -m unittest discover -s src/api_fastapi/tests
