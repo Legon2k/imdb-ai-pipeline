@@ -60,9 +60,8 @@ jobs:
 
       - name: API smoke tests
         run: |
-          # Critical: Some tests import modules from worker_ai_python
-          # We need to ensure all dependencies are available in the same environment
-          uv sync --project src/api_fastapi --extra all
+          # Critical fix: Some tests import modules from worker_ai_python
+          uv sync --project src/api_fastapi
           uv run --project src/api_fastapi pip install "redis>=5.0.0"
           uv run --project src/api_fastapi python -m unittest discover -s src/api_fastapi/tests
 
