@@ -39,7 +39,7 @@ jobs:
       - name: Ruff lint (scraper)
         run: uv run --project src/scraper_python ruff check .
 
-      # Format validation using uv execution context inside the scraper folder
+        # Format validation using uv execution context inside the scraper folder
       - name: Ruff format check (scraper)
         run: uv run --project src/scraper_python ruff format --check .
 
@@ -60,7 +60,7 @@ jobs:
 
       - name: API smoke tests
         run: |
-          # Need worker_ai_python dependencies because some tests import its modules
+          # Need worker_ai_python dependencies because some tests import its modules        
           uv sync --project src/api_fastapi
           uv run --project src/api_fastapi pip install "redis>=5.0.0"
           uv run --project src/api_fastapi python -m unittest discover -s src/api_fastapi/tests
@@ -97,7 +97,7 @@ jobs:
       - name: Build Solution
         run: dotnet build src/worker_dotnet/ImdbWorker.slnx --no-restore --configuration Release
 
-  # ====================== DOCKER BUILD CHECK ======================
+  # ====================== DOCKER BUILD & SECURITY SCAN ======================
   docker-build:
     name: Docker Build & Security Scan
     runs-on: ubuntu-latest
@@ -110,20 +110,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Docker Layer Caching
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
       - name: Build entire microservice infrastructure
         run: docker compose build --no-cache
         env:
           DOCKER_BUILDKIT: 1
+          BUILDKIT_PROGRESS: plain
 
-      - name: Run Trivy vulnerability scanner
+      - name: Run Trivy vulnerability scanner (API)
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'image'
           format: 'table'
-          exit-code: '0'                    # Changed to 0 - only warning for now
+          exit-code: '0'
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
-          scan-ref: 'imdb-ai-pipeline-api'   # Scan main image first
+          scan-ref: 'imdb-ai-pipeline-api'
 
       - name: Run Trivy on other images
         uses: aquasecurity/trivy-action@master
