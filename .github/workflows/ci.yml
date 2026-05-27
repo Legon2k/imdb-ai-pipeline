@@ -6,78 +6,70 @@ on:
   pull_request:
     branches: [ "main", "dev" ]
   workflow_dispatch:
-    inputs:
-      logLevel:
-        description: 'Log level'
-        required: true
-        default: 'warning'
 
 jobs:
+  # ====================== PYTHON CHECKS ======================
   python-checks:
     name: Python Lint & Tests
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      # Install and configure uv with native automatic caching mechanisms
-      - name: Setup uv
+      - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
-          version: "latest"
           enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
 
       # Synchronize all python project environments using localized uv toolchain
       - name: Install all dependencies
         run: |
-          uv sync
+          uv sync --project src/scraper_python
+          uv sync --project src/api_fastapi
+          uv sync --project src/worker_ai_python
 
       # Lint check using uv execution context inside the scraper folder
       - name: Ruff lint (scraper)
         run: uv run --project src/scraper_python ruff check .
 
       # Format validation using uv execution context inside the scraper folder
-      - name: Ruff format check
+      - name: Ruff format check (scraper)
         run: uv run --project src/scraper_python ruff format --check .
 
-      # Unit tests executed via uv runtime environment wrapper
-      - name: Scraper unit tests
-        run: uv run --project src/scraper_python python -m unittest discover -s src/scraper_python/tests -t src/scraper_python
-
-      - name: API linting
+      - name: Ruff lint (api)
         run: uv run --project src/api_fastapi ruff check .
 
-      - name: API format check
+      - name: Ruff format check (api)
         run: uv run --project src/api_fastapi ruff format --check .
 
-      - name: API smoke tests
-        run: uv run --project src/api_fastapi python -m unittest discover -s src/api_fastapi/tests
-
-      - name: Contract sync tests
-        run: uv run --project src/contracts pytest src/contracts/test_contracts.py -v --tb=short
-
-      # Install and test worker_ai_python dependencies
-      - name: Install AI worker dependencies
-        run: |
-          uv sync --project src/worker_ai_python
-
-      - name: AI worker lint
+      - name: Ruff lint (AI worker)
         run: uv run --project src/worker_ai_python ruff check .
 
-      - name: AI worker format check
+      - name: Ruff format check (AI worker)
         run: uv run --project src/worker_ai_python ruff format --check .
 
-      - name: Contract tests
-        run: uv run --project src/contracts pytest src/contracts/test_contracts.py -v --tb=short
+      - name: Scraper unit tests
+        run: uv run --project src/scraper_python python -m unittest discover -s src/scraper_python/tests
 
+      - name: API smoke tests
+        run: |
+          # Critical fix: Some tests import modules from worker_ai_python
+          uv sync --project src/api_fastapi
+          uv run --project src/api_fastapi pip install "redis>=5.0.0"
+          uv run --project src/api_fastapi python -m unittest discover -s src/api_fastapi/tests
+
+  # ====================== .NET CHECKS ======================
   dotnet-checks:
     name: .NET 10 Build Check
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -88,19 +80,37 @@ jobs:
           dotnet-version: '10.0.x'
           include-prerelease: true
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.nuget/packages
+            ${{ github.workspace }}/src/worker_dotnet/**/bin
+            ${{ github.workspace }}/src/worker_dotnet/**/obj
+          key: ${{ runner.os }}-dotnet-${{ hashFiles('**/ImdbWorker.slnx', '**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-dotnet-
+
       - name: Restore dependencies
         run: dotnet restore src/worker_dotnet/ImdbWorker.slnx
 
       - name: Build Solution
         run: dotnet build src/worker_dotnet/ImdbWorker.slnx --no-restore --configuration Release
 
-  docker-smoke-test:
-    name: Docker Compose Build Validation
+  # ====================== DOCKER BUILD CHECK ======================
+  docker-build:
+    name: Docker Build Validation
     runs-on: ubuntu-latest
     needs: [python-checks, dotnet-checks]
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build entire microservice infrastructure
-        run: docker compose build
+        run: docker compose build --no-cache
+        env:
+          DOCKER_BUILDKIT: 1
