@@ -59,7 +59,10 @@ jobs:
         run: uv run --project src/scraper_python python -m unittest discover -s src/scraper_python/tests
 
       - name: API smoke tests
-        run: uv run --project src/api_fastapi python -m unittest discover -s src/api_fastapi/tests
+        run: |
+          # Need worker_ai_python dependencies because some tests import its modules
+          uv sync --project src/worker_ai_python
+          uv run --project src/api_fastapi python -m unittest discover -s src/api_fastapi/tests
 
   # ====================== .NET CHECKS ======================
   dotnet-checks:
