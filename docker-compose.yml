@@ -19,7 +19,7 @@ services:
       - internal_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s                  # Changed: lighter interval for homelab
+      interval: 10s
       timeout: 5s
       retries: 5
 
@@ -59,27 +59,27 @@ services:
   # ==========================================
   scraper:
     container_name: imdb_scraper
-    build: 
+    build:
       context: .
       dockerfile: src/scraper_python/Dockerfile
     env_file:
       - .env
-    # restart: unless-stopped        # Commented: manual control in homelab
+    restart: no
     depends_on:
       redis:
         condition: service_healthy
     volumes:
-      - ./VERSION:/app/VERSION:ro        
+      - ./VERSION:/app/VERSION:ro
     networks:
       - internal_network
-    profiles: ["scraper"]           # Added: manual start only
+    #profiles: ["scraper"]           # Added: manual start only
 
   # ==========================================
   # 3. BACKGROUND WORKERS (.NET 10)
   # ==========================================
   worker:
     container_name: imdb_worker
-    build: 
+    build:
       context: ./src/worker_dotnet
       dockerfile: Dockerfile
     restart: unless-stopped
@@ -91,7 +91,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - ./VERSION:/app/VERSION:ro        
+      - ./VERSION:/app/VERSION:ro
     networks:
       - internal_network
 
@@ -100,7 +100,7 @@ services:
   # ==========================================
   api:
     container_name: imdb_api
-    build: 
+    build:
       context: .
       dockerfile: src/api_fastapi/Dockerfile
     restart: unless-stopped
@@ -114,7 +114,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./VERSION:/app/VERSION:ro        
+      - ./VERSION:/app/VERSION:ro
     networks:
       - internal_network
     healthcheck:
@@ -135,7 +135,7 @@ services:
   # ==========================================
   worker_ai:
     container_name: imdb_ai_worker
-    build: 
+    build:
       context: .
       dockerfile: src/worker_ai_python/Dockerfile
     restart: unless-stopped
@@ -147,15 +147,16 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - ./VERSION:/app/VERSION:ro        
+      - ./VERSION:/app/VERSION:ro
     networks:
       - internal_network
 
   # ==========================================
   # 6. CONTRACT TESTS (Manual)
   # ==========================================
-  contract-tests:                    # Restored: but manual only
+  contract-tests:
     container_name: imdb_contract_tests
+    restart: no
     build:
       context: .
       dockerfile: src/contracts/Dockerfile.test
@@ -163,12 +164,12 @@ services:
       - .env
     networks:
       - internal_network
-    profiles: ["test"]               # Added: runs only with --profile test
+    #profiles: ["test"]               # Added: runs only with --profile test
 
   # ==========================================
   # 7. UTILITY SERVICES (Added for Homelab)
   # ==========================================
-  portainer:                         # Added: convenient web UI for Docker management
+  portainer:
     image: portainer/portainer-ce:latest
     container_name: portainer
     restart: unless-stopped
@@ -188,4 +189,4 @@ networks:
 volumes:
   pg_data:
   redis_data:
-  portainer_data:                    # Added: persistent volume for Portainer
+  portainer_data:
