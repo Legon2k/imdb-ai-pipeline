@@ -182,6 +182,26 @@ services:
     networks:
       - internal_network
 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: imdb_pgadmin
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Default credentials (can be overridden in your .env file)
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal_network
+
 networks:
   internal_network:
     driver: bridge
@@ -190,3 +210,4 @@ volumes:
   pg_data:
   redis_data:
   portainer_data:
+  pgadmin_data:

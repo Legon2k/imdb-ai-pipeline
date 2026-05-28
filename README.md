@@ -77,6 +77,7 @@ docker compose up -d
 
 **2. Access the UIs**
 - **Portainer:** [http://192.168.2.50:9000](http://192.168.2.50:9000) (Docker Management)
+- **pgAdmin:** [http://localhost:5050](http://localhost:5050) (PostgreSQL UI. Default: `admin@admin.com` / `admin`)
 - **Redis Insight:** [http://localhost:5540](http://localhost:5540) (Monitor Redis Streams)
 - **FastAPI Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs) (API Endpoints)
 - **API Health:** [http://localhost:8000/health](http://localhost:8000/health)
@@ -118,10 +119,10 @@ Set `LOG_LEVEL` in `.env` to control Python worker log verbosity. The default is
 Business users can download a complete report containing movie data and AI-generated summaries in Excel format (`.xlsx`) by navigating to:
 [http://localhost:8000/movies/export](http://localhost:8000/movies/export)
 
-## 🔧 Homelab / Proxmox Notes##
+## 🔧 Homelab / Proxmox Notes
 
 `scraper` and `contract-tests` are configured with profiles — they do not start automatically.
-`portainer` service was added for convenient visual Docker management.
+`portainer` and `pgadmin` services were added for convenient visual management.
 Use `docker compose ps` to check the status of services.
 
 ## 🧪 Tests & Code Quality
