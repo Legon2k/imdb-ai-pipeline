@@ -1,20 +1,28 @@
-# Use the official Playwright Python image as the base
-FROM mcr.microsoft.com/playwright/python:v1.59.0-noble
+# Use a lightweight Python image with uv pre-installed
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
-# Copy the uv binary directly from the official image (multi-stage build)
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-# Set the working directory to the /app
+# Set the working directory inside the container
 WORKDIR /app
+
+# Optimize Python and uv behavior for Docker containers
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
 # Copy the entire project to the container
 COPY . .
 
-# Install the contracts package globally
-RUN uv pip install src/contracts --system
+# Install the local contracts package globally in the system
+RUN uv pip install src/contracts --system \
+    # Install the scraper package globally in editable mode
+    && uv pip install -e src/scraper_python --system
 
-# Install the scraper package globally in editable mode
-RUN uv pip install -e src/scraper_python --system
+# Download ONLY Chromium and its specific Linux dependencies
+# Uses apt cache mounting to keep the final image size minimal
+RUN --mount=type=cache,target=/var/cache/apt \
+    playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set the execution entry point using the installed console script
+# Set the execution entry point using your installed console script
 ENTRYPOINT ["imdb-top250-scraper"]
