@@ -62,7 +62,7 @@ jobs:
         run: |
           # Need worker_ai_python dependencies because some tests import its modules        
           uv sync --project src/api_fastapi
-          uv run --project src/api_fastapi pip install "redis>=5.0.0"
+          uv pip install "redis>=5.0.0" --project src/api_fastapi
           uv run --project src/api_fastapi python -m unittest discover -s src/api_fastapi/tests
 
   # ====================== .NET CHECKS ======================
