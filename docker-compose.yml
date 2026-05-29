@@ -166,22 +166,6 @@ services:
       - internal_network
     #profiles: ["test"]               # Added: runs only with --profile test
 
-  # ==========================================
-  # 7. UTILITY SERVICES (Added for Homelab)
-  # ==========================================
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    restart: unless-stopped
-    ports:
-      - "9000:9000"
-      - "9443:9443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    networks:
-      - internal_network
-
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: imdb_pgadmin
@@ -209,5 +193,4 @@ networks:
 volumes:
   pg_data:
   redis_data:
-  portainer_data:
   pgadmin_data:
