@@ -88,6 +88,26 @@ docker compose --profile scraper up -d scraper
 ```
 The `.NET worker` will pick up payloads from `movies_stream`, save them to PostgreSQL with a `pending` status, and acknowledge each processed stream entry.
 
+### Podman-compatible commands
+
+The compose file is kept compatible with Docker Compose and Podman Compose. Docker remains the default for Make targets, but you can switch engines without editing the Makefile:
+
+```powershell
+make compose-config CONTAINER_ENGINE=podman
+make compose-build CONTAINER_ENGINE=podman
+make compose-up CONTAINER_ENGINE=podman
+make compose-ps CONTAINER_ENGINE=podman
+```
+
+You can also call Podman directly:
+
+```powershell
+podman compose config
+podman compose build
+podman compose up -d
+podman compose ps
+```
+
 ## 🪄 AI Enrichment (Local LLM) & Self-Healing
 
 Integrates with local LLMs (e.g., Ollama with the `gemma4:e4b` model) using an asynchronous Redis Stream.
@@ -107,6 +127,12 @@ If the host machine loses power or the LLM crashes, you can recover stuck tasks 
 **4. Tune LLM Timeout:**
 Set `LLM_TIMEOUT_SECONDS` in `.env` to control the maximum duration of a single Ollama generation request. The default is `600` seconds.
 
+When running the stack with Podman, set the AI worker endpoint to the Podman host alias:
+
+```env
+LLM_API_URL=http://host.containers.internal:11434/api/generate
+```
+
 **5. Tune Stream Retention:**
 Set `MOVIES_STREAM_MAXLEN` and `AI_STREAM_MAXLEN` in `.env` to control approximate Redis Stream retention. The default is `1000` entries per stream.
 
@@ -122,7 +148,7 @@ Business users can download a complete report containing movie data and AI-gener
 
 `scraper` and `contract-tests` are configured with profiles — they do not start automatically.
 `pgadmin` and `redis-insight` services are included for database and Redis stream inspection.
-Use `docker compose ps` to check the status of services.
+Use `docker compose ps` or `podman compose ps` to check the status of services.
 
 ## 🧪 Tests & Code Quality
 

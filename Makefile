@@ -1,4 +1,7 @@
-.PHONY: install install-dev install-browser test test-contracts test-all lint format scrape docker-build docker-run compose-run
+.PHONY: install install-dev install-browser install-test test test-contracts test-all test-docker lint format scrape docker-build docker-run compose-config compose-build compose-up compose-ps compose-run
+
+CONTAINER_ENGINE ?= docker
+COMPOSE ?= $(CONTAINER_ENGINE) compose
 
 SHELL := pwsh.exe
 .SHELLFLAGS := -NoProfile -Command
@@ -27,7 +30,7 @@ test-contracts:
 test-all: test test-contracts
 
 test-docker:
-	docker compose --profile test up contract-tests
+	$(COMPOSE) --profile test up contract-tests
 
 lint:
 	$$env:VIRTUAL_ENV = $$null; uv run --project src/scraper_python ruff check .
@@ -43,10 +46,22 @@ scrape:
 	uv run --project src/scraper_python python -B src/scraper_python/src/imdb_top.py
 
 docker-build:
-	docker build -t imdb-top250-scraper src/scraper_python
+	$(CONTAINER_ENGINE) build -t imdb-top250-scraper src/scraper_python
 
 docker-run:
-	docker run --rm -v "$(CURDIR)/data:/data" imdb-top250-scraper
+	$(CONTAINER_ENGINE) run --rm -v "$(CURDIR)/data:/data" imdb-top250-scraper
+
+compose-config:
+	$(COMPOSE) config
+
+compose-build:
+	$(COMPOSE) build
+
+compose-up:
+	$(COMPOSE) up -d
+
+compose-ps:
+	$(COMPOSE) ps
 
 compose-run:
-	docker compose run --rm scraper
+	$(COMPOSE) run --rm scraper
