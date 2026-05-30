@@ -19,9 +19,8 @@ RUN uv pip install src/contracts --system \
     && uv pip install -e src/scraper_python --system
 
 # Download ONLY Chromium and its specific Linux dependencies
-# Uses apt cache mounting to keep the final image size minimal
-RUN --mount=type=cache,target=/var/cache/apt \
-    playwright install --with-deps chromium \
+# Keep this compatible with classic Docker builders and Podman providers
+RUN playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the execution entry point using your installed console script

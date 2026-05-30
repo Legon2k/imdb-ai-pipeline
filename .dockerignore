@@ -6,15 +6,26 @@
 .env.backup
 
 .venv
+**/.venv
 venv
+**/venv
 env
+**/env
 __pycache__
+**/__pycache__
 *.pyc
+**/*.pyc
 .mypy_cache
+**/.mypy_cache
 .pytest_cache
+**/.pytest_cache
 .ruff_cache
+**/.ruff_cache
 .coverage
 htmlcov
+**/htmlcov
 
 *.tar
+**/*.tar
 *.log
+**/*.log

@@ -9,7 +9,7 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Copy project files
-COPY src/worker_ai_python/pyproject.toml src/worker_ai_python/uv.lock .
+COPY src/worker_ai_python/pyproject.toml src/worker_ai_python/uv.lock ./
 
 # Install dependencies using uv
 RUN uv sync --frozen
