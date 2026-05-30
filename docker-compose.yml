@@ -61,7 +61,7 @@ services:
     container_name: imdb_scraper
     build:
       context: .
-      dockerfile: src/scraper_python/Dockerfile
+      target: scraper
     env_file:
       - .env
     restart: no
@@ -102,7 +102,7 @@ services:
     container_name: imdb_api
     build:
       context: .
-      dockerfile: src/api_fastapi/Dockerfile
+      target: api
     restart: unless-stopped
     env_file:
       - .env
@@ -137,7 +137,7 @@ services:
     container_name: imdb_ai_worker
     build:
       context: .
-      dockerfile: src/worker_ai_python/Dockerfile
+      target: worker_ai
     restart: unless-stopped
     env_file:
       - .env
@@ -159,7 +159,7 @@ services:
     restart: no
     build:
       context: .
-      dockerfile: src/contracts/Dockerfile.test
+      target: contract_tests
     env_file:
       - .env
     networks:
