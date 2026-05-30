@@ -64,7 +64,7 @@ services:
       target: scraper
     env_file:
       - .env
-    restart: no
+    restart: "no"
     depends_on:
       redis:
         condition: service_healthy
@@ -156,7 +156,7 @@ services:
   # ==========================================
   contract-tests:
     container_name: imdb_contract_tests
-    restart: no
+    restart: "no"
     build:
       context: .
       target: contract_tests
