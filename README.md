@@ -108,6 +108,35 @@ podman compose up -d
 podman compose ps
 ```
 
+On Windows, `podman compose` is a wrapper around an external compose provider. This project was validated with `podman-compose` as the provider. If `podman compose version` reports Docker Desktop's `docker-compose.exe`, install `podman-compose` and point Podman at it:
+
+```powershell
+python -m pip install --user podman-compose
+New-Item -ItemType Directory -Force "$env:APPDATA\containers"
+$provider = Join-Path $env:APPDATA "Python\Python314\Scripts\podman-compose.exe"
+$provider = $provider.Replace('\', '/')
+@"
+[engine]
+compose_providers = ["$provider"]
+compose_warning_logs = false
+"@ | Set-Content "$env:APPDATA\containers\containers.conf"
+```
+
+Verified Podman smoke-test sequence:
+
+```powershell
+podman compose build
+podman compose up -d postgres redis
+podman compose up -d api worker worker_ai
+podman compose ps
+curl.exe http://localhost:8000/health
+curl.exe http://localhost:8000/ready
+podman compose run --rm scraper
+podman exec imdb_postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT COUNT(*) FROM movies;"'
+```
+
+If Docker Compose is already running the same stack, stop it first or change the published ports in `.env`; PostgreSQL and Redis bind to `5432` and `6379` by default.
+
 ## 🪄 AI Enrichment (Local LLM) & Self-Healing
 
 Integrates with local LLMs (e.g., Ollama with the `gemma4:e4b` model) using an asynchronous Redis Stream.
@@ -127,10 +156,16 @@ If the host machine loses power or the LLM crashes, you can recover stuck tasks 
 **4. Tune LLM Timeout:**
 Set `LLM_TIMEOUT_SECONDS` in `.env` to control the maximum duration of a single Ollama generation request. The default is `600` seconds.
 
-When running the stack with Podman, set the AI worker endpoint to the Podman host alias:
+When Ollama runs on the same host as Podman, set the AI worker endpoint to the Podman host alias:
 
 ```env
 LLM_API_URL=http://host.containers.internal:11434/api/generate
+```
+
+When Ollama runs on another machine in your LAN, use that machine's IP address instead:
+
+```env
+LLM_API_URL=http://192.168.1.30:11434/api/generate
 ```
 
 **5. Tune Stream Retention:**
