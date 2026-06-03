@@ -72,15 +72,34 @@ services:
       - ./VERSION:/app/VERSION:ro
     networks:
       - internal_network
-    #profiles: ["scraper"]           # Added: manual start only
 
   # ==========================================
-  # 3. BACKGROUND WORKERS (.NET 10)
+  # 3. BACKGROUND WORKERS (.NET 10 & Go)
   # ==========================================
+  # Original .NET 10 Worker
   worker:
     container_name: imdb_worker
     build:
       context: ./src/worker_dotnet
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./VERSION:/app/VERSION:ro
+    networks:
+      - internal_network
+
+  # New High-Performance Go Worker
+  worker_go:
+    container_name: imdb_worker_go
+    build:
+      context: ./src/worker_go
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
@@ -164,7 +183,6 @@ services:
       - .env
     networks:
       - internal_network
-    #profiles: ["test"]               # Added: runs only with --profile test
 
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -173,7 +191,6 @@ services:
     env_file:
       - .env
     environment:
-      # Default credentials (can be overridden in your .env file)
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
     ports:
