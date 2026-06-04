@@ -80,8 +80,8 @@ services:
   worker:
     container_name: imdb_worker
     build:
-      context: ./src/worker_dotnet
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: src/worker_dotnet/Dockerfile
     restart: unless-stopped
     env_file:
       - .env
@@ -90,8 +90,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-    volumes:
-      - ./VERSION:/app/VERSION:ro
     networks:
       - internal_network
 

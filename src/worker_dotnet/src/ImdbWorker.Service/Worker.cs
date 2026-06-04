@@ -1,9 +1,9 @@
-// --- START OF FILE Worker.cs ---
 // Shared data contracts are defined in ImdbWorker.Contracts namespace
 // See contracts/CsharpContracts.cs for single source of truth
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Reflection;
 using Dapper;
 using Npgsql;
 using StackExchange.Redis;
@@ -33,10 +33,11 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Read version from the mapped VERSION file
-        var version = File.Exists("/app/VERSION") 
-            ? await File.ReadAllTextAsync("/app/VERSION", stoppingToken) 
-            : "0.0.0-dev";
+        // Extract the informational version baked at build-time from assembly metadata
+        var version = Assembly.GetEntryAssembly()
+            ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion 
+            ?? "0.0.0-dev";
 
         _logger.LogInformation(
             "IMDB Worker v{Version} started. Listening to stream {StreamName} as {ConsumerGroup}/{ConsumerName}",
