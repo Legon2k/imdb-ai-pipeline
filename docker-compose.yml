@@ -68,8 +68,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    volumes:
-      - ./VERSION:/app/VERSION:ro
     networks:
       - internal_network
 
@@ -159,8 +157,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-    volumes:
-      - ./VERSION:/app/VERSION:ro
     networks:
       - internal_network
 

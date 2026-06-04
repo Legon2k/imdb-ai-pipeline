@@ -14,6 +14,12 @@ from redis.exceptions import ResponseError
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
 from contracts import AITaskPayload
 
+# Import the statically baked version or fallback to dev version
+try:
+    from version import APP_VERSION
+except ImportError:
+    APP_VERSION = "0.0.0-dev"
+
 # System configurations
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -84,19 +90,8 @@ async def read_stream_message(redis_client: redis.Redis):
     return messages[0]
 
 
-def get_app_version() -> str:
-    """Reads the application version from the root VERSION file."""
-    try:
-        with open("/app/VERSION") as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return "0.0.0-dev"
-
-
 async def main():
-    LOGGER.info(
-        f"IMDb AI Worker starting up v{get_app_version()}. Connecting to Redis and PostgreSQL..."
-    )
+    LOGGER.info(f"IMDb AI Worker starting up v{APP_VERSION}. Connecting to Redis and PostgreSQL...")
 
     LOGGER.info(
         "event=worker_started stream=%s group=%s consumer=%s model=%s timeout_seconds=%s",
