@@ -1,5 +1,3 @@
-# --- START OF FILE scraper.py ---
-
 import asyncio
 import logging
 
