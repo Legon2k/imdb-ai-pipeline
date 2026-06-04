@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +13,9 @@ import (
 	rWorker "github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/redis"
 	"github.com/redis/go-redis/v9"
 )
+
+// Global variable populated at compile time via -ldflags
+var Version = "0.0.0-dev"
 
 func main() {
 	// Logger initialization (JSON matches modern observability stacks)
@@ -32,9 +33,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	version := readVersion()
 	logger.Info("IMDB Worker started",
-		slog.String("version", version),
+		slog.String("version", Version),
 		slog.String("stream", cfg.StreamName),
 		slog.String("group", cfg.ConsumerGroup),
 		slog.String("consumer", cfg.ConsumerName),
@@ -77,15 +77,4 @@ func main() {
 	defer cancel()
 
 	logger.Info("worker service has stopped cleanly")
-}
-
-func readVersion() string {
-	bytes, err := os.ReadFile("/app/VERSION")
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "0.0.0-dev"
-		}
-		return "0.0.0-error"
-	}
-	return strings.TrimSpace(string(bytes))
 }

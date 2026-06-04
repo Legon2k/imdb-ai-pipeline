@@ -97,22 +97,20 @@ services:
 
   # New High-Performance Go Worker
   worker_go:
-    container_name: imdb_worker_go
-    build:
-      context: ./src/worker_go
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file:
-      - .env
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./VERSION:/app/VERSION:ro
-    networks:
-      - internal_network
+      container_name: imdb_worker_go
+      build:
+        context: .
+        dockerfile: src/worker_go/Dockerfile
+      restart: unless-stopped
+      env_file:
+        - .env
+      depends_on:
+        redis:
+          condition: service_healthy
+        postgres:
+          condition: service_healthy
+      networks:
+        - internal_network
 
   # ==========================================
   # 4. API GATEWAY (FastAPI)
