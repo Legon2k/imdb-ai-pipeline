@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,6 +12,8 @@ import (
 	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/config"
 	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/db"
 	rWorker "github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/redis"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -21,6 +24,14 @@ func main() {
 	// Logger initialization (JSON matches modern observability stacks)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
+	prometheus.MustRegister(rWorker.MoviesProcessedTotal)
+	http.Handle("/metrics", promhttp.Handler())
+	go func() {
+		logger.Info("metrics server started", slog.String("address", ":2112"), slog.String("path", "/metrics"))
+		if err := http.ListenAndServe(":2112", nil); err != nil {
+			logger.Error("metrics server stopped unexpectedly", slog.String("error", err.Error()))
+		}
+	}()
 
 	// Load settings
 	cfg, err := config.Load()

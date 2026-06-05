@@ -93,20 +93,22 @@ services:
 
   # New High-Performance Go Worker
   worker_go:
-      container_name: imdb_worker_go
-      build:
-        context: .
-        dockerfile: src/worker_go/Dockerfile
-      restart: unless-stopped
-      env_file:
-        - .env
-      depends_on:
-        redis:
-          condition: service_healthy
-        postgres:
-          condition: service_healthy
-      networks:
-        - internal_network
+    container_name: imdb_worker_go
+    build:
+      context: .
+      dockerfile: src/worker_go/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "2112:2112"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal_network
 
   # ==========================================
   # 4. API GATEWAY (FastAPI)
@@ -152,11 +154,29 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    ports:
+      - "8001:8001"
     depends_on:
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    networks:
+      - internal_network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: imdb_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      worker_go:
+        condition: service_started
+      worker_ai:
+        condition: service_started
     networks:
       - internal_network
 

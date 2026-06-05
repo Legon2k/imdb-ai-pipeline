@@ -7,6 +7,7 @@ from time import perf_counter
 import asyncpg
 import httpx
 import redis.asyncio as redis
+from prometheus_client import Counter, Histogram, start_http_server
 from pydantic import ValidationError
 from redis.exceptions import ResponseError
 
@@ -34,6 +35,23 @@ STREAM_NAME = os.getenv("AI_STREAM_NAME", "ai_stream")
 CONSUMER_GROUP = os.getenv("AI_CONSUMER_GROUP", "ai_worker")
 CONSUMER_NAME = os.getenv("AI_CONSUMER_NAME", "ai-worker-1")
 PAYLOAD_FIELD = "payload"
+METRICS_PORT = int(os.getenv("METRICS_PORT", "8001"))
+
+AI_TASKS_PROCESSED_TOTAL = Counter(
+    "ai_tasks_processed_total",
+    "Total AI enrichment tasks processed by outcome.",
+    ["status"],
+)
+LLM_REQUEST_DURATION_SECONDS = Histogram(
+    "llm_request_duration_seconds",
+    "Local LLM generation latency in seconds.",
+    buckets=(5.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0),
+)
+LLM_SUMMARY_CHARACTERS = Histogram(
+    "llm_summary_characters",
+    "Character length of successful local LLM summaries.",
+    buckets=(50, 100, 150, 200, 300, 500),
+)
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -92,6 +110,8 @@ async def read_stream_message(redis_client: redis.Redis):
 
 async def main():
     LOGGER.info(f"IMDb AI Worker starting up v{APP_VERSION}. Connecting to Redis and PostgreSQL...")
+    start_http_server(METRICS_PORT)
+    LOGGER.info("event=metrics_server_started port=%s path=/metrics", METRICS_PORT)
 
     LOGGER.info(
         "event=worker_started stream=%s group=%s consumer=%s model=%s timeout_seconds=%s",
@@ -127,6 +147,7 @@ async def main():
                 message_id, fields = result
                 message = fields.get(PAYLOAD_FIELD)
                 if not message:
+                    AI_TASKS_PROCESSED_TOTAL.labels(status="missing_payload").inc()
                     LOGGER.warning(
                         "event=message_missing_payload stream=%s group=%s consumer=%s "
                         "message_id=%s field=%s",
@@ -151,6 +172,7 @@ async def main():
                     # Validate raw JSON against strict contract (contracts/schemas.json)
                     task = AITaskPayload.model_validate_json(message)
                 except ValidationError as ve:
+                    AI_TASKS_PROCESSED_TOTAL.labels(status="contract_violation").inc()
                     LOGGER.warning(
                         "event=contract_violation stream=%s group=%s consumer=%s "
                         "message_id=%s error=%r",
@@ -192,11 +214,14 @@ async def main():
                 started_at = perf_counter()
                 response = await http_client.post(LLM_URL, json=payload)
                 response.raise_for_status()
-                llm_duration_ms = round((perf_counter() - started_at) * 1000, 2)
+                llm_duration_seconds = perf_counter() - started_at
+                LLM_REQUEST_DURATION_SECONDS.observe(llm_duration_seconds)
+                llm_duration_ms = round(llm_duration_seconds * 1000, 2)
 
                 summary = response.json().get("response", "").strip()
                 if not summary:
                     raise RuntimeError("LLM returned an empty summary.")
+                LLM_SUMMARY_CHARACTERS.observe(len(summary))
 
                 # Update DB to 'completed'
                 async with db_pool.acquire() as conn:
@@ -207,6 +232,7 @@ async def main():
                         task.id,
                     )
                 await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
+                AI_TASKS_PROCESSED_TOTAL.labels(status="completed").inc()
                 LOGGER.info(
                     "event=task_completed stream=%s group=%s consumer=%s message_id=%s "
                     "movie_id=%s rank=%s llm_duration_ms=%s summary_chars=%s",
@@ -221,6 +247,7 @@ async def main():
                 )
 
             except Exception as e:
+                AI_TASKS_PROCESSED_TOTAL.labels(status="failed").inc()
                 LOGGER.exception(
                     "event=task_failed stream=%s group=%s consumer=%s message_id=%s "
                     "movie_id=%s error=%r",

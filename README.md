@@ -51,6 +51,29 @@ graph TD
     style LLM fill:#f4a261,stroke:#fff,stroke-width:2px,color:#000
 ```
 
+## Observability and Metrics
+
+The stack includes Prometheus for pipeline observability. When the Compose stack is running,
+Prometheus is available at `http://localhost:9090`.
+
+Prometheus scrapes the worker metrics endpoints configured in
+`infra/prometheus/prometheus.yml`:
+
+- Python AI Worker: `http://localhost:8001/metrics`
+- Go Movie Worker: `http://localhost:2112/metrics`
+
+Key application metrics:
+
+- `ai_tasks_processed_total`: AI worker task outcomes by `status`
+  (`completed`, `failed`, `contract_violation`, `missing_payload`).
+- `llm_request_duration_seconds`: local LLM generation latency.
+- `llm_summary_characters`: successful LLM summary length.
+- `movies_processed_total`: Go worker processing outcomes by `status`
+  (`success`, `db_error`, `validation_error`).
+
+Prometheus runs as the `prometheus` service in `docker-compose.yml` and joins the internal
+Compose network with the worker services.
+
 ## Worker Migration: .NET to Go
 
 The movie ingestion layer is intentionally running in a transition mode according to [ADR-001](docs/adr/001-migration-from-dotnet-to-go-worker.md).

@@ -10,10 +10,19 @@ import (
 
 	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/db"
 	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/model"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 )
 
 const PayloadField = "payload"
+
+var MoviesProcessedTotal = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "movies_processed_total",
+		Help: "Total movies processed by the Go worker by outcome.",
+	},
+	[]string{"status"},
+)
 
 type Worker struct {
 	redisClient   *redis.Client
@@ -118,30 +127,35 @@ func (w *Worker) readFromStream(ctx context.Context, id string) ([]redis.XMessag
 func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage) error {
 	rawPayload, exists := entry.Values[PayloadField]
 	if !exists {
+		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
 		w.logger.Warn("skipping stream entry: missing payload field", slog.String("message_id", entry.ID))
 		return w.acknowledge(ctx, entry.ID)
 	}
 
 	payloadStr, ok := rawPayload.(string)
 	if !ok {
+		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
 		w.logger.Warn("skipping stream entry: invalid payload type", slog.String("message_id", entry.ID))
 		return w.acknowledge(ctx, entry.ID)
 	}
 
 	var movie model.MoviePayload
 	if err := json.Unmarshal([]byte(payloadStr), &movie); err != nil {
+		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
 		w.logger.Warn("skipping stream entry: invalid movie payload", slog.String("message_id", entry.ID), slog.String("error", err.Error()))
 		return w.acknowledge(ctx, entry.ID)
 	}
 
 	// Validate against contract rules
 	if err := movie.Validate(); err != nil {
+		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
 		w.logger.Warn("skipping stream entry: contract validation failed", slog.String("message_id", entry.ID), slog.String("error", err.Error()))
 		return w.acknowledge(ctx, entry.ID)
 	}
 
 	// SQL Write
 	if err := w.repo.SaveMovieToDatabase(ctx, &movie); err != nil {
+		MoviesProcessedTotal.WithLabelValues("db_error").Inc()
 		return fmt.Errorf("failed to save movie to database: %w", err)
 	}
 
@@ -150,6 +164,7 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage) error {
 		return err
 	}
 
+	MoviesProcessedTotal.WithLabelValues("success").Inc()
 	w.logger.Info("saved to DB and acknowledged stream entry", slog.String("title", movie.Title), slog.String("message_id", entry.ID))
 	return nil
 }
