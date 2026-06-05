@@ -1,5 +1,3 @@
-# --- START OF FILE Dockerfile ---
-
 FROM python:3.11-slim
 
 # Disable Python output buffering for real-time logging
@@ -23,6 +21,12 @@ COPY src/api_fastapi/src ./src
 
 # Copy contracts directory for import resolution
 COPY src/contracts ./src/contracts
+
+# Copy the VERSION file from the monorepo root to retrieve version at build-time
+COPY VERSION ./
+
+# Read VERSION and dynamically bake it as a static variable inside src/version.py
+RUN echo "APP_VERSION = '$(cat VERSION)'" > src/version.py
 
 # Expose port 8000 for the FastAPI server
 EXPOSE 8000

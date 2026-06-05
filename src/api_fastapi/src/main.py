@@ -15,6 +15,12 @@ from pydantic import BaseModel
 sys.path.insert(0, os.path.dirname(__file__))
 from contracts import DatabaseMovie
 
+# Import the statically baked version or fallback to dev version
+try:
+    from version import APP_VERSION
+except ImportError:
+    APP_VERSION = "0.0.0-dev"
+
 # Global variables to hold our connections
 db_pool = None
 redis_client = None
@@ -86,22 +92,13 @@ async def lifespan(app: FastAPI):
             await redis_client.aclose()
 
 
-def get_app_version() -> str:
-    """Reads the application version from the root VERSION file."""
-    try:
-        with open("/app/VERSION") as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return "0.0.0-dev"
-
-
 app = FastAPI(
     title="IMDB AI Pipeline API",
     description=(
         "API Gateway for accessing processed IMDB movie data, "
         "triggering AI tasks, and self-healing."
     ),
-    version=get_app_version(),  # <--- Now it dynamically reads from the file!
+    version=APP_VERSION,  # <--- Statically bound compile-time version
     lifespan=lifespan,
 )
 

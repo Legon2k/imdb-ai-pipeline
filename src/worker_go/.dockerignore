@@ -1,0 +1,19 @@
+# Ignore local compiled binaries and executables
+*.exe
+*.exe~
+imdb_worker_go
+worker_go
+
+# Ignore local test caches and coverages
+*.test
+*.out
+*.prof
+
+# Ignore IDE and editor configurations
+.idea/
+.vscode/
+*.code-workspace
+
+# Ignore OS metadata
+Thumbs.db
+.DS_Store

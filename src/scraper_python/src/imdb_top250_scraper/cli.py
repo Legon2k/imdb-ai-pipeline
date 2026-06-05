@@ -1,5 +1,3 @@
-# --- START OF FILE cli.py ---
-
 import argparse
 import asyncio
 import logging
@@ -12,16 +10,13 @@ from imdb_top250_scraper.constants import (
 )
 from imdb_top250_scraper.scraper import scrape_imdb_top_250
 
+# Import the statically baked version or fallback to dev version
+try:
+    from imdb_top250_scraper.version import APP_VERSION
+except ImportError:
+    APP_VERSION = "0.0.0-dev"
+
 LOGGER = logging.getLogger(__name__)
-
-
-def get_app_version() -> str:
-    """Reads the application version from the root VERSION file."""
-    try:
-        with open("/app/VERSION") as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return "0.0.0-dev"
 
 
 def positive_int(value: str) -> int:
@@ -34,10 +29,8 @@ def positive_int(value: str) -> int:
 
 def parse_args() -> argparse.Namespace:
     """Parses command line arguments for the scraper."""
-    version = get_app_version()
-
     parser = argparse.ArgumentParser(
-        description=f"Scrape IMDb Top 250 movies and push to Redis. Version: {version}"
+        description=f"Scrape IMDb Top 250 movies and push to Redis. Version: {APP_VERSION}"
     )
 
     # File output arguments (--output, --format, --pretty) were removed
@@ -90,7 +83,7 @@ async def main() -> None:
     args = parse_args()
     logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
 
-    LOGGER.info(f"Scraping IMDb starting. Version: {get_app_version()}.")
+    LOGGER.info(f"Scraping IMDb starting. Version: {APP_VERSION}.")
 
     # Call the scraper without file output arguments
     movies = await scrape_imdb_top_250(

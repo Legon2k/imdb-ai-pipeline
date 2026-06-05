@@ -1,0 +1,34 @@
+# --- Go binaries and packaging ---
+# Compiled binaries (executables)
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Specific Go test and build artifacts
+*.test
+*.out
+*.prof
+cpu.out
+mem.out
+
+# Avoid committing the compiled output if built locally
+/imdb_worker
+/worker
+/worker_go
+
+# --- Architecture & Dependency ---
+# Only commit vendor if you strictly lock dependencies locally (not recommended in modern Go)
+# vendor/
+
+# --- IDEs and editors ---
+# JetBrains (GoLand, Rider)
+.idea/
+*.ihp
+*.ids
+*.atst
+
+# VS Code
+.vscode/
+*.code-workspace
