@@ -180,6 +180,22 @@ services:
     networks:
       - internal_network
 
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: imdb_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # Grafana UI port
+    volumes:
+      - grafana_data:/var/lib/grafana
+      # Automatically provision the Prometheus datasource
+      - ./infra/grafana/provisioning/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks:
+      - internal_network
+
   # ==========================================
   # 6. CONTRACT TESTS (Manual)
   # ==========================================
@@ -221,3 +237,4 @@ volumes:
   pg_data:
   redis_data:
   pgadmin_data:
+  grafana_data:
