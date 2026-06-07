@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import os
 
 from imdb_top250_scraper.constants import (
     DEFAULT_LOCALE,
@@ -10,11 +11,8 @@ from imdb_top250_scraper.constants import (
 )
 from imdb_top250_scraper.scraper import scrape_imdb_top_250
 
-# Import the statically baked version or fallback to dev version
-try:
-    from imdb_top250_scraper.version import APP_VERSION
-except ImportError:
-    APP_VERSION = "0.0.0-dev"
+# Retrieve the application version from environment variables (Runtime ENV)
+APP_VERSION = os.getenv("APP_VERSION", "0.0.0-dev")
 
 LOGGER = logging.getLogger(__name__)
 

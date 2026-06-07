@@ -78,8 +78,8 @@ services:
   worker:
     container_name: imdb_worker
     build:
-      context: .
-      dockerfile: src/worker_dotnet/Dockerfile
+      context: ./src/worker_dotnet
+      dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
       - .env
@@ -95,8 +95,8 @@ services:
   worker_go:
     container_name: imdb_worker_go
     build:
-      context: .
-      dockerfile: src/worker_go/Dockerfile
+      context: ./src/worker_go
+      dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
       - .env

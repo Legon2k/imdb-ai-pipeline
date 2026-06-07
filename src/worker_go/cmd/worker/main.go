@@ -17,9 +17,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Global variable populated at compile time via -ldflags
-var Version = "0.0.0-dev"
-
 func main() {
 	// Logger initialization (JSON matches modern observability stacks)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -44,8 +41,15 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Read version from environment variable with fallback
+	version := os.Getenv("APP_VERSION")
+
+	if version == "" {
+		version = "0.0.0-dev"
+	}
+
 	logger.Info("IMDB Worker started",
-		slog.String("version", Version),
+		slog.String("version", version),
 		slog.String("stream", cfg.StreamName),
 		slog.String("group", cfg.ConsumerGroup),
 		slog.String("consumer", cfg.ConsumerName),

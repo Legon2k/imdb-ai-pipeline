@@ -15,11 +15,8 @@ from pydantic import BaseModel
 sys.path.insert(0, os.path.dirname(__file__))
 from contracts import DatabaseMovie
 
-# Import the statically baked version or fallback to dev version
-try:
-    from version import APP_VERSION
-except ImportError:
-    APP_VERSION = "0.0.0-dev"
+# Retrieve the application version from environment variables (Runtime ENV)
+APP_VERSION = os.getenv("APP_VERSION", "0.0.0-dev")
 
 # Global variables to hold our connections
 db_pool = None
@@ -98,7 +95,7 @@ app = FastAPI(
         "API Gateway for accessing processed IMDB movie data, "
         "triggering AI tasks, and self-healing."
     ),
-    version=APP_VERSION,  # <--- Statically bound compile-time version
+    version=APP_VERSION,  # <--- Statically bound via runtime config
     lifespan=lifespan,
 )
 

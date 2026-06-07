@@ -15,11 +15,8 @@ from redis.exceptions import ResponseError
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
 from contracts import AITaskPayload
 
-# Import the statically baked version or fallback to dev version
-try:
-    from version import APP_VERSION
-except ImportError:
-    APP_VERSION = "0.0.0-dev"
+# Retrieve the application version from environment variables (Runtime ENV)
+APP_VERSION = os.getenv("APP_VERSION", "0.0.0-dev")
 
 # System configurations
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
