@@ -20,6 +20,8 @@ graph TD
     RedisAI[(Redis Stream<br/>'ai_stream')]
     WorkerAI(Python AI Worker<br/>LLM Consumer)
     LLM{{Local LLM<br/>Ollama / Gemma}}
+    Prometheus(Prometheus<br/>Metrics Scraper)
+    Grafana(Grafana<br/>Provisioned Dashboards)
 
     %% Define Flow
     IMDB -- 1. Scrape DOM --> Scraper
@@ -36,6 +38,10 @@ graph TD
     WorkerAI -- 10. Prompt --> LLM
     LLM -- 11. Summary --> WorkerAI
     WorkerAI -- 12. Update + XACK --> DB
+
+    WorkerGo -. /metrics .-> Prometheus
+    WorkerAI -. /metrics .-> Prometheus
+    Prometheus -. datasource .-> Grafana
     
     Client -- 13. Download .xlsx --> API
 
@@ -49,15 +55,29 @@ graph TD
     style API fill:#009688,stroke:#fff,stroke-width:2px,color:#fff
     style WorkerAI fill:#f6d04d,stroke:#fff,stroke-width:2px,color:#000
     style LLM fill:#f4a261,stroke:#fff,stroke-width:2px,color:#000
+    style Prometheus fill:#e6522c,stroke:#fff,stroke-width:2px,color:#fff
+    style Grafana fill:#f46800,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Observability and Metrics
 
-The stack includes Prometheus for pipeline observability. When the Compose stack is running,
-Prometheus is available at `http://localhost:9090`.
+The Compose stack includes a monitoring profile with Prometheus and Grafana. Prometheus
+scrapes application metrics from the high-throughput workers, while Grafana publishes a
+ready-made dashboard from repository-managed provisioning files.
 
-Prometheus scrapes the worker metrics endpoints configured in
-`infra/prometheus/prometheus.yml`:
+Start the monitoring services together with the pipeline:
+
+```bash
+docker compose --profile monitoring up -d
+```
+
+Monitoring endpoints:
+
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000`
+
+Prometheus runs as the `prometheus` service and uses
+`infra/prometheus/prometheus.yml` as its scrape configuration. It collects metrics from:
 
 - Python AI Worker: `http://localhost:8001/metrics`
 - Go Movie Worker: `http://localhost:2112/metrics`
@@ -71,8 +91,15 @@ Key application metrics:
 - `movies_processed_total`: Go worker processing outcomes by `status`
   (`success`, `db_error`, `validation_error`).
 
-Prometheus runs as the `prometheus` service in `docker-compose.yml` and joins the internal
-Compose network with the worker services.
+Grafana runs as the `grafana` service. Its Prometheus datasource and dashboard panels are
+provisioned as infrastructure as code:
+
+- Datasource: `infra/grafana/provisioning/datasources/datasource.yml`
+- Dashboard provider: `infra/grafana/provisioning/dashboards/dashboard.yml`
+- Ready-made panels: `infra/grafana/provisioning/dashboards/imdb_pipeline.json`
+
+The provisioned `IMDB AI PIPELINE` dashboard includes panels for average Ollama latency,
+average summary length, Go ingestion rate, and AI task processing rate.
 
 ## Worker Migration: .NET to Go
 
