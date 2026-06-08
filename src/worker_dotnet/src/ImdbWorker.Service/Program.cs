@@ -5,6 +5,11 @@ var processStartTime = System.Diagnostics.Process.GetCurrentProcess().StartTime.
 
 var builder = Host.CreateApplicationBuilder(args);
 
+if (string.Equals(builder.Configuration["Logging:LogLevel:Default"], "INFO", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Configuration["Logging:LogLevel:Default"] = "Information";
+}
+
 // 1. Redis Configuration
 var redisHost = builder.Configuration["REDIS_HOST"] ?? "localhost";
 var redisPort = builder.Configuration["REDIS_PORT"] ?? "6379";

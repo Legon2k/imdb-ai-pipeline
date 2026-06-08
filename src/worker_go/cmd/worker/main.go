@@ -55,6 +55,7 @@ func main() {
 
 	logger.Info("IMDB Worker started",
 		slog.String("version", version),
+		slog.String("logLevel", cfg.LogLevel),
 		slog.String("stream", cfg.StreamName),
 		slog.String("group", cfg.ConsumerGroup),
 		slog.String("consumer", cfg.ConsumerName),
@@ -76,11 +77,11 @@ func main() {
 		logger.Error("redis connection failed", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	
+
 	// Log cold start metric
 	timeToReady := time.Since(startTime)
 	logger.Info("cold start complete", slog.Int64("time_ms", timeToReady.Milliseconds()))
-	
+
 	defer rClient.Close()
 
 	// Initialize Worker

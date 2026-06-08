@@ -35,13 +35,25 @@ public class Worker : BackgroundService
         _consumerName = Environment.GetEnvironmentVariable("MOVIES_CONSUMER_NAME") ?? Environment.MachineName;
     }
 
+    private string GetCurrentLogLevel()
+    {
+        if (_logger.IsEnabled(LogLevel.Trace)) return "Trace";
+        if (_logger.IsEnabled(LogLevel.Debug)) return "Debug";
+        if (_logger.IsEnabled(LogLevel.Information)) return "Information";
+        if (_logger.IsEnabled(LogLevel.Warning)) return "Warning";
+        if (_logger.IsEnabled(LogLevel.Error)) return "Error";
+        if (_logger.IsEnabled(LogLevel.Critical)) return "Critical";
+        return "None";
+    }    
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var version = Environment.GetEnvironmentVariable("APP_VERSION") ?? "0.0.0-dev";
 
         _logger.LogInformation(
-            "IMDB Worker v{Version} started. Listening to stream {StreamName} as {ConsumerGroup}/{ConsumerName}",
+            "IMDB Worker v{Version} started. Log level: {LogLevel}. Listening to stream {StreamName} as {ConsumerGroup}/{ConsumerName}",
             version,
+            GetCurrentLogLevel(),
             _streamName,
             _consumerGroup,
             _consumerName
