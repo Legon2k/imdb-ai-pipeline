@@ -103,11 +103,12 @@ average summary length, Go ingestion rate, and AI task processing rate.
 
 ## Worker Migration: .NET to Go
 
-The movie ingestion layer is intentionally running in a transition mode according to [ADR-001](docs/adr/001-migration-from-dotnet-to-go-worker.md).
+The movie ingestion layer is intentionally running in a transition mode according to [ADR-001](docs/adr/001-migration-from-dotnet-to-go-worker.md). The `worker_go` service was created as a transit implementation for moving ingestion from the legacy `.NET` worker to Go. For now it runs in parallel with the existing `.NET` service so both implementations can be validated before the final cutover.
 
 - `src/worker_dotnet` / `worker`: current .NET 10 Worker and baseline implementation.
 - `src/worker_go` / `worker_go`: Golang Worker added for transit and future replacement of the .NET service.
 - Both workers consume `movies_stream` through Redis consumer groups and persist normalized movie data into PostgreSQL.
+- Prometheus and Grafana metrics are used to compare runtime behavior, ingestion rate, and operational stability during the parallel run.
 - The next phase is comparative testing of both services and collecting the final migration results.
 - After the test results are accepted, the pipeline will be switched fully to `worker_go`; the .NET worker can then be removed or kept only as a rollback reference.
 

@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-06-08
+### Worker Migration
+- **Added:** New `worker_go` service as the Go-based migration target for replacing the legacy `.NET` `worker`.
+
+### Observability & Monitoring
+- **Added:** Prometheus monitoring profile in Docker Compose for scraping metrics from `worker_go` and `worker_ai`.
+- **Added:** Grafana service with provisioned Prometheus datasource and dashboard-as-code configuration.
+- **Added:** Ready-made Grafana panels for the IMDB pipeline dashboard via `infra/grafana/provisioning/dashboards/imdb_pipeline.json`.
+- **Changed:** Updated `README.md` architecture and observability documentation to describe Prometheus, Grafana, metrics endpoints, and provisioning as infrastructure as code.
+
+### Worker Telemetry
+- **Added:** .NET worker cold-start timing log after successful Redis connection.
+- **Added:** .NET worker batch milestone logging with dynamic RPS calculation.
+- **Changed:** Per-message .NET worker success logging now uses `Trace` level to reduce hot-path overhead.
+
 ## [0.6.0] - 2026-05-16
 ### Reliability Hardening
 - **Added:** FastAPI liveness and readiness endpoints: `GET /health` and `GET /ready`.
