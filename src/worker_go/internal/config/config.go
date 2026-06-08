@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/caarlos0/env/v11"
 )
@@ -18,6 +20,9 @@ type Config struct {
 	// Redis
 	RedisHost string `env:"REDIS_HOST" envDefault:"localhost"`
 	RedisPort string `env:"REDIS_PORT" envDefault:"6379"`
+
+	// Logging
+	LogLevel string `env:"LOG_LEVEL" envDefault:"INFO"`
 
 	// Streams
 	StreamName    string `env:"MOVIES_STREAM_NAME" envDefault:"movies_stream"`
@@ -50,4 +55,17 @@ func (c *Config) GetPgConnectionString() string {
 
 func (c *Config) GetRedisAddr() string {
 	return fmt.Sprintf("%s:%s", c.RedisHost, c.RedisPort)
+}
+
+func (c *Config) GetLogLevel() slog.Level {
+	switch strings.ToUpper(c.LogLevel) {
+	case "DEBUG":
+		return slog.LevelDebug
+	case "WARNING":
+		return slog.LevelWarn
+	case "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }

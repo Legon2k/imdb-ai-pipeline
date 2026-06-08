@@ -18,8 +18,20 @@ import (
 )
 
 func main() {
-	// Logger initialization (JSON matches modern observability stacks)
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// Capture cold start time
+	startTime := time.Now()
+
+	// Load settings first to get log level
+	cfg, err := config.Load()
+	if err != nil {
+		// Fallback logger for initialization errors
+		fallbackLogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		fallbackLogger.Error("failed to load configuration", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	// Logger initialization with configured log level (JSON matches modern observability stacks)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.GetLogLevel()}))
 	slog.SetDefault(logger)
 	prometheus.MustRegister(rWorker.MoviesProcessedTotal)
 	http.Handle("/metrics", promhttp.Handler())
@@ -29,13 +41,6 @@ func main() {
 			logger.Error("metrics server stopped unexpectedly", slog.String("error", err.Error()))
 		}
 	}()
-
-	// Load settings
-	cfg, err := config.Load()
-	if err != nil {
-		logger.Error("failed to load configuration", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
 
 	// Graceful setup
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -71,6 +76,11 @@ func main() {
 		logger.Error("redis connection failed", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
+	
+	// Log cold start metric
+	timeToReady := time.Since(startTime)
+	logger.Info("cold start complete", slog.Int64("time_ms", timeToReady.Milliseconds()))
+	
 	defer rClient.Close()
 
 	// Initialize Worker
