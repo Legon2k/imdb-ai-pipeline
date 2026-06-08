@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: "imdb-pipeline"
+    static_configs:
+      - targets:
+          - "imdb_ai_worker:8001" # Python AI Worker Metrics
+          - "imdb_worker_go:2112" # Go Worker Metrics

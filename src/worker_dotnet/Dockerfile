@@ -2,35 +2,26 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0-preview AS build
 WORKDIR /app
 
-# Copy the solution and project files first to cache layers (optimizes build time).
-# Since the build context is now the monorepo root, paths are prefixed with 'src/worker_dotnet/'.
-COPY ["src/worker_dotnet/ImdbWorker.slnx", "./"]
-COPY ["src/worker_dotnet/src/ImdbWorker.Service/ImdbWorker.Service.csproj", "src/ImdbWorker.Service/"]
+# Copy the project files from local context
+COPY ["ImdbWorker.slnx", "./"]
+COPY ["src/ImdbWorker.Service/ImdbWorker.Service.csproj", "src/ImdbWorker.Service/"]
 RUN dotnet restore
 
-# Copy the remaining dotnet source code relative to the monorepo root
-COPY src/worker_dotnet/ .
+# Copy the remaining dotnet source code
+COPY . .
 
-# Copy the single-source-of-truth VERSION file from the monorepo root
-COPY VERSION ./
-
-# Publish the application, baking the version string from VERSION file at compile-time
+# Publish without compile-time variable injection
 WORKDIR /app/src/ImdbWorker.Service
-RUN dotnet publish -c Release -o /app/publish \
-    /p:UseAppHost=false \
-    /p:Version=$(cat /app/VERSION) \
-    /p:InformationalVersion=$(cat /app/VERSION)
+RUN dotnet publish -c Release -o /app/publish /p:UseAppHost=false
 
-# Stage 2: Runtime environment (minimal footprint)
+# Stage 2: Runtime environment
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-preview AS runtime
 WORKDIR /app
 
-# Install necessary dependencies for Kerberos/GSSAPI
 RUN apt-get update && apt-get install -y \
     libkrb5-dev \
     && rm -rf /var/lib/apt/lists/*
     
 COPY --from=build /app/publish .
 
-# Define the entrypoint for the worker service
 ENTRYPOINT ["dotnet", "ImdbWorker.Service.dll"]

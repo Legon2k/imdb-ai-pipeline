@@ -33,11 +33,7 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Extract the informational version baked at build-time from assembly metadata
-        var version = Assembly.GetEntryAssembly()
-            ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion 
-            ?? "0.0.0-dev";
+        var version = Environment.GetEnvironmentVariable("APP_VERSION") ?? "0.0.0-dev";
 
         _logger.LogInformation(
             "IMDB Worker v{Version} started. Listening to stream {StreamName} as {ConsumerGroup}/{ConsumerName}",

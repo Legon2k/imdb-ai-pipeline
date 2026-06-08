@@ -13,9 +13,6 @@ ENV PYTHONUNBUFFERED=1 \
 # Copy the entire project to the container
 COPY . .
 
-# Read the root VERSION file and bake it statically into the package before installation
-RUN echo "APP_VERSION = '$(cat VERSION)'" > src/scraper_python/imdb_top250_scraper/version.py
-
 # Install the local contracts package globally in the system
 RUN uv pip install src/contracts --system \
     # Install the scraper package globally in editable mode
