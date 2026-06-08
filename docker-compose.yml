@@ -81,6 +81,8 @@ services:
       context: ./src/worker_dotnet
       dockerfile: Dockerfile
     restart: unless-stopped
+    environment:      
+      - Logging__LogLevel__Default=${LOG_LEVEL}
     env_file:
       - .env
     depends_on:

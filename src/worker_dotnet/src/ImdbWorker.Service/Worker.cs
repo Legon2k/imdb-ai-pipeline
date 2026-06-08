@@ -1,6 +1,7 @@
 // Shared data contracts are defined in ImdbWorker.Contracts namespace
 // See contracts/CsharpContracts.cs for single source of truth
 
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Reflection;
@@ -20,6 +21,9 @@ public class Worker : BackgroundService
     private readonly string _consumerGroup;
     private readonly string _consumerName;
     private const string PayloadField = "payload";
+    private const int LogBatchSize = 50;
+    private long _msgCounter = 0;
+    private long _batchStartTicks = Stopwatch.GetTimestamp();
 
     public Worker(ILogger<Worker> logger, IConnectionMultiplexer redis, PostgresConfig pgConfig)
     {
@@ -145,7 +149,31 @@ public class Worker : BackgroundService
 
         await SaveMovieToDatabaseAsync(movie, ct);
         await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
-        _logger.LogInformation("Saved to DB and acknowledged stream entry: {Title}", movie.Title);
+
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug("Saved to DB and acknowledged stream entry: {Title}", movie.Title);
+        }
+
+        _msgCounter++;
+        
+        if (_msgCounter % LogBatchSize == 0)
+        {
+            var batchEndTicks = Stopwatch.GetTimestamp();
+            var batchSeconds = (batchEndTicks - _batchStartTicks) / (double)Stopwatch.Frequency;
+            var batchRps = batchSeconds > 0
+                ? LogBatchSize / batchSeconds
+                : 0;
+
+            _logger.LogInformation(
+                "[BATCH] Processed: {Processed} | Batch Time: {BatchTime:F3}s | Batch RPS: {BatchRps:F2}",
+                _msgCounter,
+                batchSeconds,
+                batchRps
+            );
+
+            _batchStartTicks = Stopwatch.GetTimestamp();
+        }
     }
 
     private async Task SaveMovieToDatabaseAsync(MoviePayload movie, CancellationToken ct)

@@ -1,15 +1,28 @@
-// --- START OF FILE Program.cs ---
-
 using StackExchange.Redis;
 using ImdbWorker.Service;
+
+var processStartTime = System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime();
 
 var builder = Host.CreateApplicationBuilder(args);
 
 // 1. Redis Configuration
 var redisHost = builder.Configuration["REDIS_HOST"] ?? "localhost";
 var redisPort = builder.Configuration["REDIS_PORT"] ?? "6379";
-builder.Services.AddSingleton<IConnectionMultiplexer>(sp => 
-    ConnectionMultiplexer.Connect($"{redisHost}:{redisPort},abortConnect=false"));
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var redis = ConnectionMultiplexer.Connect($"{redisHost}:{redisPort},abortConnect=false");
+    var redisReadyTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+    var coldStartMs = (DateTime.UtcNow - processStartTime).TotalMilliseconds;
+    sp.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("Startup")
+        .LogInformation(
+            "Cold start completed in {ColdStartMs:F2} ms. Redis ready ticks: {RedisReadyTicks}",
+            coldStartMs,
+            redisReadyTicks
+        );
+
+    return redis;
+});
 
 // 2. PostgreSQL Configuration
 var pgUser = builder.Configuration["POSTGRES_USER"] ?? "imdb_admin";
