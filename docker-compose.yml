@@ -190,6 +190,8 @@ services:
       - grafana_data:/var/lib/grafana
       # Automatically provision the Prometheus datasource
       - ./infra/grafana/provisioning/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      # Automatically provision dashboards from JSON files in the specified directory
+      - ./infra/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
     depends_on:
       prometheus:
         condition: service_started

@@ -1,0 +1,13 @@
+# Grafana dashboards provisioning config
+apiVersion: 1
+
+providers:
+  - name: 'IMDB Pipeline Dashboards'
+    orgId: 1
+    folder: ''  # Place dashboards in the root folder of Grafana
+    type: file
+    disableDeletion: false
+    editable: true  # Allow editing in UI (changes won't save back to git automatically)
+    updateIntervalSeconds: 10  # Interval to scan for JSON changes on disk
+    options:
+      path: /etc/grafana/provisioning/dashboards  # Path inside the container

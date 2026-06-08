@@ -1,10 +1,11 @@
-# Grafana datasource provisioning config
 apiVersion: 1
 
 datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
-    url: http://imdb_prometheus:9090  # Internal container DNS name of Prometheus service
+    url: http://imdb_prometheus:9090
     isDefault: true
-    editable: false  # Prevent accidental editing in the Grafana UI
+    editable: false
+    uid: Prometheus
+    orgId: 1
