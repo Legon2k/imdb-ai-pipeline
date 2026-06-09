@@ -20,16 +20,18 @@ public class Worker : BackgroundService
     private readonly string _streamName;
     private readonly string _consumerGroup;
     private readonly string _consumerName;
+    private readonly bool _simulateDbSave;
     private const string PayloadField = "payload";
     private const int LogBatchSize = 50;
     private long _msgCounter = 0;
     private long _batchStartTicks = Stopwatch.GetTimestamp();
 
-    public Worker(ILogger<Worker> logger, IConnectionMultiplexer redis, PostgresConfig pgConfig)
+    public Worker(ILogger<Worker> logger, IConnectionMultiplexer redis, PostgresConfig pgConfig, SimulationConfig simConfig)
     {
         _logger = logger;
         _redis = redis;
         _pgConnectionString = pgConfig.ConnectionString;
+        _simulateDbSave = simConfig.SimulateDbSave;
         _streamName = Environment.GetEnvironmentVariable("MOVIES_STREAM_NAME") ?? "movies_stream";
         _consumerGroup = Environment.GetEnvironmentVariable("MOVIES_CONSUMER_GROUP") ?? "imdb_worker";
         _consumerName = Environment.GetEnvironmentVariable("MOVIES_CONSUMER_NAME") ?? Environment.MachineName;
@@ -51,9 +53,10 @@ public class Worker : BackgroundService
         var version = Environment.GetEnvironmentVariable("APP_VERSION") ?? "0.0.0-dev";
 
         _logger.LogInformation(
-            "IMDB Worker v{Version} started. Log level: {LogLevel}. Listening to stream {StreamName} as {ConsumerGroup}/{ConsumerName}",
+            "IMDB Worker v{Version} started. Log level: {LogLevel}. Simulate DB save: {SimulateDbSave}. Listening to stream {StreamName} as {ConsumerGroup}/{ConsumerName}",
             version,
             GetCurrentLogLevel(),
+            _simulateDbSave,
             _streamName,
             _consumerGroup,
             _consumerName
@@ -159,7 +162,11 @@ public class Worker : BackgroundService
             return;
         }
 
-        await SaveMovieToDatabaseAsync(movie, ct);
+        if (!_simulateDbSave)
+        {
+            await SaveMovieToDatabaseAsync(movie, ct);
+        }
+        
         await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
 
         if (_logger.IsEnabled(LogLevel.Debug))

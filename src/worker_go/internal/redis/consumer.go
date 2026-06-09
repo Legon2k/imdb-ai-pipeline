@@ -26,22 +26,24 @@ var MoviesProcessedTotal = prometheus.NewCounterVec(
 )
 
 type Worker struct {
-	redisClient   *redis.Client
-	repo          *db.Repository
-	streamName    string
-	consumerGroup string
-	consumerName  string
-	logger        *slog.Logger
+	redisClient    *redis.Client
+	repo           *db.Repository
+	streamName     string
+	consumerGroup  string
+	consumerName   string
+	logger         *slog.Logger
+	simulateDbSave bool
 }
 
-func NewWorker(rc *redis.Client, repo *db.Repository, stream, group, consumer string, logger *slog.Logger) *Worker {
+func NewWorker(rc *redis.Client, repo *db.Repository, stream, group, consumer string, logger *slog.Logger, simulateDbSave bool) *Worker {
 	return &Worker{
-		redisClient:   rc,
-		repo:          repo,
-		streamName:    stream,
-		consumerGroup: group,
-		consumerName:  consumer,
-		logger:        logger,
+		redisClient:    rc,
+		repo:           repo,
+		streamName:     stream,
+		consumerGroup:  group,
+		consumerName:   consumer,
+		logger:         logger,
+		simulateDbSave: simulateDbSave,
 	}
 }
 
@@ -166,9 +168,11 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 	}
 
 	// SQL Write
-	if err := w.repo.SaveMovieToDatabase(ctx, &movie); err != nil {
-		MoviesProcessedTotal.WithLabelValues("db_error").Inc()
-		return fmt.Errorf("failed to save movie to database: %w", err)
+	if !w.simulateDbSave {
+		if err := w.repo.SaveMovieToDatabase(ctx, &movie); err != nil {
+			MoviesProcessedTotal.WithLabelValues("db_error").Inc()
+			return fmt.Errorf("failed to save movie to database: %w", err)
+		}
 	}
 
 	// Acknowledge stream entry

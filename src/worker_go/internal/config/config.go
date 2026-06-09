@@ -24,6 +24,9 @@ type Config struct {
 	// Logging
 	LogLevel string `env:"LOG_LEVEL" envDefault:"INFO"`
 
+	// Simulation
+	SimulateDbSave string `env:"SIMULATE_SAVE_MOVIE_TO_DATABASE" envDefault:"false"`
+
 	// Streams
 	StreamName    string `env:"MOVIES_STREAM_NAME" envDefault:"movies_stream"`
 	ConsumerGroup string `env:"MOVIES_CONSUMER_GROUP" envDefault:"imdb_worker"`
@@ -68,4 +71,9 @@ func (c *Config) GetLogLevel() slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func (c *Config) IsSimulateDbSave() bool {
+	normalized := strings.ToLower(strings.TrimSpace(c.SimulateDbSave))
+	return normalized == "true" || normalized == "yes" || normalized == "1" || normalized == "on"
 }

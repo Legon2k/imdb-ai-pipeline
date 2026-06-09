@@ -56,6 +56,7 @@ func main() {
 	logger.Info("IMDB Worker started",
 		slog.String("version", version),
 		slog.String("logLevel", cfg.LogLevel),
+		slog.Bool("simulateDbSave", cfg.IsSimulateDbSave()),
 		slog.String("stream", cfg.StreamName),
 		slog.String("group", cfg.ConsumerGroup),
 		slog.String("consumer", cfg.ConsumerName),
@@ -85,7 +86,7 @@ func main() {
 	defer rClient.Close()
 
 	// Initialize Worker
-	worker := rWorker.NewWorker(rClient, repo, cfg.StreamName, cfg.ConsumerGroup, cfg.ConsumerName, logger)
+	worker := rWorker.NewWorker(rClient, repo, cfg.StreamName, cfg.ConsumerGroup, cfg.ConsumerName, logger, cfg.IsSimulateDbSave())
 	if err := worker.EnsureConsumerGroup(ctx); err != nil {
 		logger.Error("failed to verify consumer group", slog.String("error", err.Error()))
 		os.Exit(1)

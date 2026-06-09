@@ -10,9 +10,19 @@ if (string.Equals(builder.Configuration["Logging:LogLevel:Default"], "INFO", Str
     builder.Configuration["Logging:LogLevel:Default"] = "Information";
 }
 
+// Helper function to parse simulate DB save flag
+bool ParseSimulateDbSave(string? value)
+{
+    if (string.IsNullOrEmpty(value)) return false;
+    var normalized = value.ToLowerInvariant().Trim();
+    return normalized == "true" || normalized == "yes" || normalized == "1" || normalized == "on";
+}
+
 // 1. Redis Configuration
 var redisHost = builder.Configuration["REDIS_HOST"] ?? "localhost";
 var redisPort = builder.Configuration["REDIS_PORT"] ?? "6379";
+var simulateDbSave = ParseSimulateDbSave(builder.Configuration["SIMULATE_SAVE_MOVIE_TO_DATABASE"]);
+
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 {
     var redis = ConnectionMultiplexer.Connect($"{redisHost}:{redisPort},abortConnect=false");
@@ -28,6 +38,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 
     return redis;
 });
+
+builder.Services.AddSingleton(new SimulationConfig(simulateDbSave));
 
 // 2. PostgreSQL Configuration
 var pgUser = builder.Configuration["POSTGRES_USER"] ?? "imdb_admin";
@@ -47,3 +59,5 @@ host.Run();
 
 // Simple record to inject connection string
 public record PostgresConfig(string ConnectionString);
+
+public record SimulationConfig(bool SimulateDbSave);
