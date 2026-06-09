@@ -65,3 +65,11 @@ compose-ps:
 
 compose-run:
 	$(COMPOSE) run --rm scraper
+
+# Run performance bench setup (populates Redis Stream with 5M items)
+# Default count if not specified externally
+count ?= 1000
+
+load-bench-fill:
+	@echo "Populating Redis stream with $(count) messages..."
+	uv run --isolated --with redis --with python-dotenv --env-file .env tests/load_bench/fill_redis_stream.py --host 127.0.0.1 --count $(count)
