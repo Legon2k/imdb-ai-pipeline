@@ -22,7 +22,7 @@ public class Worker : BackgroundService
     private readonly string _consumerName;
     private readonly bool _simulateDbSave;
     private const string PayloadField = "payload";
-    private const int LogBatchSize = 50;
+    private const int LogBatchSize = 1000;
     private long _msgCounter = 0;
     private long _batchStartTicks = Stopwatch.GetTimestamp();
 

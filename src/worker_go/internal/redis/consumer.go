@@ -15,7 +15,7 @@ import (
 )
 
 const PayloadField = "payload"
-const logBatchSize = 50
+const logBatchSize = 1000
 
 var MoviesProcessedTotal = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
