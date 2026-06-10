@@ -87,7 +87,7 @@ def main():
     total_messages = args.count
 
     # Dynamically adjust batch size so it doesn't exceed the total message count
-    batch_size = min(1000, total_messages)
+    batch_size = min(10000, total_messages)
 
     print(
         f"Starting data ingestion of {total_messages} messages into Redis Stream '{stream_name}'..."
