@@ -3,8 +3,17 @@ global:
   evaluation_interval: 5s
 
 scrape_configs:
-  - job_name: "imdb-pipeline"
+  # 1. Scrape job for Python AI Worker
+  - job_name: 'worker-ai'
     static_configs:
-      - targets:
-          - "imdb_ai_worker:8001" # Python AI Worker Metrics
-          - "imdb_worker_go:2112" # Go Worker Metrics
+      - targets: ['imdb_ai_worker:8001']
+
+  # 2. Scrape job for Go Ingestion Worker
+  - job_name: 'worker-go'
+    static_configs:
+      - targets: ['imdb_worker_go:2112']
+
+  # 3. Scrape job for Legacy .NET Ingestion Worker
+  - job_name: 'worker-dotnet'
+    static_configs:
+      - targets: ['imdb_worker:8002']

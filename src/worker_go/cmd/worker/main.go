@@ -33,7 +33,11 @@ func main() {
 	// Logger initialization with configured log level (JSON matches modern observability stacks)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.GetLogLevel()}))
 	slog.SetDefault(logger)
+
+	// Register Prometheus metrics
 	prometheus.MustRegister(rWorker.MoviesProcessedTotal)
+	prometheus.MustRegister(rWorker.MessageProcessingDuration) // Registered the new latency histogram
+
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
 		logger.Info("metrics server started", slog.String("address", ":2112"), slog.String("path", "/metrics"))

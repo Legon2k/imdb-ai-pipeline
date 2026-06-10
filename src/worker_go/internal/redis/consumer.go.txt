@@ -17,22 +17,12 @@ import (
 const PayloadField = "payload"
 const logBatchSize = 1000
 
-// MoviesProcessedTotal tracks raw processed message counts
 var MoviesProcessedTotal = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "movies_processed_total",
 		Help: "Total movies processed by the Go worker by outcome.",
 	},
 	[]string{"status"},
-)
-
-// MessageProcessingDuration tracks high-resolution latency percentiles
-var MessageProcessingDuration = prometheus.NewHistogram(
-	prometheus.HistogramOpts{
-		Name:    "message_processing_duration_seconds",
-		Help:    "Latency of a single message processing run (from read to ACK) in seconds.",
-		Buckets: []float64{0.0005, 0.001, 0.0015, 0.002, 0.003, 0.005, 0.01, 0.025, 0.05, 0.1, 0.5},
-	},
 )
 
 type Worker struct {
@@ -141,9 +131,6 @@ func (w *Worker) readFromStream(ctx context.Context, id string) ([]redis.XMessag
 }
 
 func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCounter *int64, batchStart *time.Time) error {
-	// Start high-resolution latency timer
-	start := time.Now()
-
 	rawPayload, exists := entry.Values[PayloadField]
 	if !exists {
 		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
@@ -180,7 +167,7 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 		return w.acknowledge(ctx, entry.ID)
 	}
 
-	// SQL Write (or simulated bypass)
+	// SQL Write
 	if !w.simulateDbSave {
 		if err := w.repo.SaveMovieToDatabase(ctx, &movie); err != nil {
 			MoviesProcessedTotal.WithLabelValues("db_error").Inc()
@@ -193,10 +180,7 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 		return err
 	}
 
-	// Record success metric and measure processing latency
 	MoviesProcessedTotal.WithLabelValues("success").Inc()
-	MessageProcessingDuration.Observe(time.Since(start).Seconds())
-
 	if w.logger.Enabled(ctx, slog.LevelDebug) {
 		w.logger.Debug("saved to DB and acknowledged stream entry", slog.String("title", movie.Title), slog.String("message_id", entry.ID))
 	}

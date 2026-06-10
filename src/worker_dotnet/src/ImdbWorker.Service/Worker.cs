@@ -9,6 +9,7 @@ using Dapper;
 using Npgsql;
 using StackExchange.Redis;
 using ImdbWorker.Contracts;
+using Prometheus; // Added Prometheus .NET library
 
 namespace ImdbWorker.Service;
 
@@ -25,6 +26,29 @@ public class Worker : BackgroundService
     private const int LogBatchSize = 1000;
     private long _msgCounter = 0;
     private long _batchStartTicks = Stopwatch.GetTimestamp();
+
+    // Prometheus counter for tracking processed message counts
+    private static readonly Counter MoviesProcessedTotal = Metrics.CreateCounter(
+        "movies_processed_total",
+        "Total movies processed by the .NET worker by outcome.",
+        new CounterConfiguration
+        {
+            LabelNames = new[] { "status" }
+        }
+    );
+
+    // Prometheus histogram for tracking latency percentiles (P50, P95, P99)
+    private static readonly Histogram MessageProcessingDuration = Metrics.CreateHistogram(
+        "message_processing_duration_seconds",
+        "Latency of a single message processing run (from read to ACK) in seconds.",
+        new HistogramConfiguration
+        {
+            // Latency buckets optimized for millisecond-range stream processing
+            Buckets = new[] { 0.0005, 0.001, 0.0015, 0.002, 0.003, 0.005, 0.01, 0.025, 0.05, 0.1, 0.5 }
+        }
+    );
+
+    private MetricServer? _metricServer;
 
     public Worker(ILogger<Worker> logger, IConnectionMultiplexer redis, PostgresConfig pgConfig, SimulationConfig simConfig)
     {
@@ -50,6 +74,11 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Start standalone Prometheus metric server on port 8002
+        _metricServer = new MetricServer(port: 8002);
+        _metricServer.Start();
+        _logger.LogInformation("Prometheus metrics server started on port 8002. System and runtime metrics enabled.");
+
         var version = Environment.GetEnvironmentVariable("APP_VERSION") ?? "0.0.0-dev";
 
         _logger.LogInformation(
@@ -123,10 +152,14 @@ public class Worker : BackgroundService
 
     private async Task ProcessEntryAsync(IDatabase db, StreamEntry entry, CancellationToken ct)
     {
+        // Start high-resolution timing for latency percentile calculation
+        var entryStartTicks = Stopwatch.GetTimestamp();
+
         var payload = entry.Values.FirstOrDefault(value => value.Name == PayloadField).Value;
         if (!payload.HasValue)
         {
             _logger.LogWarning("Skipping stream entry {MessageId}: missing payload field", entry.Id);
+            MoviesProcessedTotal.WithLabels("validation_error").Inc();
             await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
             return;
         }
@@ -136,9 +169,10 @@ public class Worker : BackgroundService
         {
             movie = JsonSerializer.Deserialize<MoviePayload>(payload.ToString());
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            _logger.LogWarning(ex, "Skipping stream entry {MessageId}: invalid movie payload", entry.Id);
+            _logger.LogWarning("Skipping stream entry {MessageId}: invalid movie payload", entry.Id);
+            MoviesProcessedTotal.WithLabels("validation_error").Inc();
             await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
             return;
         }
@@ -146,6 +180,7 @@ public class Worker : BackgroundService
         if (movie == null)
         {
             _logger.LogWarning("Skipping stream entry {MessageId}: empty movie payload", entry.Id);
+            MoviesProcessedTotal.WithLabels("validation_error").Inc();
             await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
             return;
         }
@@ -155,19 +190,35 @@ public class Worker : BackgroundService
         {
             movie.Validate();
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            _logger.LogWarning(ex, "Skipping stream entry {MessageId}: contract validation failed", entry.Id);
+            _logger.LogWarning("Skipping stream entry {MessageId}: contract validation failed", entry.Id);
+            MoviesProcessedTotal.WithLabels("validation_error").Inc();
             await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
             return;
         }
 
+        // Execute save only if DB simulation/bypass is disabled
         if (!_simulateDbSave)
         {
-            await SaveMovieToDatabaseAsync(movie, ct);
+            try
+            {
+                await SaveMovieToDatabaseAsync(movie, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to save movie to database: {MessageId}", entry.Id);
+                MoviesProcessedTotal.WithLabels("db_error").Inc();
+                return; // Revert/do not ACK on DB write failure to allow retry
+            }
         }
         
         await db.StreamAcknowledgeAsync(_streamName, _consumerGroup, entry.Id);
+        MoviesProcessedTotal.WithLabels("success").Inc();
+
+        // Stop timing and observe value in the histogram
+        var elapsedSeconds = (Stopwatch.GetTimestamp() - entryStartTicks) / (double)Stopwatch.Frequency;
+        MessageProcessingDuration.Observe(elapsedSeconds);
 
         if (_logger.IsEnabled(LogLevel.Debug))
         {
@@ -209,5 +260,11 @@ public class Worker : BackgroundService
 
         await using var connection = new NpgsqlConnection(_pgConnectionString);
         await connection.ExecuteAsync(new CommandDefinition(sql, movie, cancellationToken: ct));
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        _metricServer?.Stop();
+        await base.StopAsync(cancellationToken);
     }
 }
