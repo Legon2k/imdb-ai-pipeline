@@ -58,7 +58,13 @@ def main():
 
     # 5. Initialize Redis connection and pipeline
     try:
-        r = redis.Redis(host=redis_host, port=redis_port, decode_responses=True)
+        r = redis.Redis(
+            host=redis_host,
+            port=redis_port,
+            decode_responses=True,
+            socket_connect_timeout=30.0,  # Increased to 30s to withstand WSL2 disk latency
+            socket_timeout=30.0,  # Increased to 30s to prevent socket timeouts
+        )
         pipe = r.pipeline()
     except Exception as e:
         print(f"Failed to initialize Redis client: {e}")
@@ -81,7 +87,7 @@ def main():
     total_messages = args.count
 
     # Dynamically adjust batch size so it doesn't exceed the total message count
-    batch_size = min(50000, total_messages)
+    batch_size = min(1000, total_messages)
 
     print(
         f"Starting data ingestion of {total_messages} messages into Redis Stream '{stream_name}'..."
