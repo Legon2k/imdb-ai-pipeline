@@ -73,3 +73,7 @@ count ?= 1000
 load-bench-fill:
 	@echo "Populating Redis stream with $(count) messages..."
 	uv run --isolated --with redis --with python-dotenv --env-file .env tests/load_bench/fill_redis_stream.py --host 127.0.0.1 --count $(count)
+
+load-bench-clean:
+	@echo "Cleaning Redis stream..."
+	podman exec -it imdb_redis redis-cli XTRIM movies_stream MAXLEN 100	
