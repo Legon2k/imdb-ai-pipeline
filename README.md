@@ -109,7 +109,33 @@ The movie ingestion layer is intentionally running in a transition mode accordin
 - `src/worker_go` / `worker_go`: Golang Worker added for transit and future replacement of the .NET service.
 - Both workers consume `movies_stream` through Redis consumer groups and persist normalized movie data into PostgreSQL.
 - Prometheus and Grafana metrics are used to compare runtime behavior, ingestion rate, and operational stability during the parallel run.
-- The next phase is comparative testing of both services and collecting the final migration results.
+- Prometheus and Grafana metrics are used to compare runtime behavior, ingestion rate, and operational stability during the parallel run.
+- Comparative load testing of both services has been successfully executed, with Go demonstrating a 2.2x throughput gain and a 5.3x memory footprint reduction (see [Migration Benchmarks](#-migration-benchmarks--finops-analysis-net-vs-go) below).
 - After the test results are accepted, the pipeline will be switched fully to `worker_go`; the .NET worker can then be removed or kept only as a rollback reference.
 
 The rationale, alternatives, and expected operational impact are documented in ADR-001.
+
+## 📈 Migration Benchmarks & FinOps Analysis (.NET vs Go)
+
+We conducted a high-concurrency isolated load test of **10,000,000 messages** to compare the operational efficiency, latency profiles, and resource consumption of the legacy .NET 10 Worker against the Go 1.24 Worker.
+
+The benchmark runs with database writes bypassed (`_simulateDbSave` and `SimulateDbSave` active) to isolate the CPU scheduler, memory allocator, and Redis network performance.
+
+### Performance Benchmark Summary
+
+| Engineering Metric | .NET 10 Worker (`worker_dotnet`) | Go 1.24 Worker (`worker_go`) | Architectural & FinOps Impact |
+| :--- | :--- | :--- | :--- |
+| **Peak Throughput (RPS)** | ~350 - 450 RPS | **~750 - 950 RPS** | **~2.2x higher throughput**, enabling faster message backlog draining. |
+| **Median Latency (P50)** | 1.1 ms | **0.5 ms** | **2.2x faster execution** under standard load due to zero runtime runtime abstraction overhead. |
+| **95th Percentile Latency (P95)** | ~2.8 ms | **~1.3 ms** | **2.1x lower latency** for 95% of processing cycles. |
+| **99th Percentile Latency (P99)** | ~7.0 - 9.0 ms | **~3.5 - 5.0 ms** | **Over 2x flatter tail latency**. Go maintains predictable execution; .NET spikes are caused by GC pause jitter. |
+| **RAM Footprint (Working Set)** | ~96 MiB | **~18 MiB** | **5.3x memory reduction**, enabling high-density container packing and lower AWS Fargate fees. |
+| **Startup Time (Cold Start)** | ~1,800 ms | **~15 ms** | **50x faster scaling**. Go scales out instantly under load; .NET lags due to CLR and JIT initialization. |
+
+### Ingestion Telemetry (Grafana Benchmark Panel)
+
+The screenshot below displays the live telemetry captured during the 10M message stream processing, contrasting the throughput capacity, flat latency profile of Go, and the stark memory footprint gap:
+
+![Grafana Ingestion Benchmark](docs/benchmarks/assets/grafana_benchmark.png)
+
+*For more details on the experimental environment, load test scripts, and complete raw data, refer to the [Full Ingestion Benchmark Report](docs/benchmarks/dotnet-vs-go-ingestion.md).*
