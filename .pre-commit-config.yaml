@@ -1,0 +1,20 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+repos:
+  # Hook into the official Ruff pre-commit repository
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version tag to use for the checks
+    rev: v0.4.10
+    hooks:
+      # HOOK 1: Linter and Import Organizer
+      # This hook analyzes code, catches errors, and automatically organizes/sorts imports.
+      - id: ruff
+        # The '--fix' flag enables Ruff to automatically repair safe, fixable linting issues 
+        # (like unused imports or missing blank lines) right during the git commit process.
+        args: [ --fix ]
+
+      # HOOK 2: Code Formatter
+      # This hook acts exactly like 'ruff format', enforcing consistent spacing, 
+      # indentation, and line breaks across all modified Python files.
+      - id: ruff-format

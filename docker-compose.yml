@@ -81,8 +81,12 @@ services:
       context: ./src/worker_dotnet
       dockerfile: Dockerfile
     restart: unless-stopped
+    environment:      
+      - Logging__LogLevel__Default=${LOG_LEVEL}
     env_file:
       - .env
+    ports:
+      - "8002:8002"
     depends_on:
       redis:
         condition: service_healthy
@@ -176,6 +180,8 @@ services:
       worker_go:
         condition: service_started
       worker_ai:
+        condition: service_started
+      worker:
         condition: service_started
     networks:
       - internal_network

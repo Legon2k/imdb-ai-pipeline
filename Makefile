@@ -3,8 +3,14 @@
 CONTAINER_ENGINE ?= docker
 COMPOSE ?= $(CONTAINER_ENGINE) compose
 
-SHELL := pwsh.exe
-.SHELLFLAGS := -NoProfile -Command
+ifeq ($(OS),Windows_NT)
+    SHELL := pwsh.exe
+    .SHELLFLAGS := -NoProfile -Command
+else
+    # Настройки для Linux / macOS
+    SHELL := /bin/bash
+    .SHELLFLAGS := -c
+endif
 
 install:
 	uv sync --project src/scraper_python
@@ -65,3 +71,15 @@ compose-ps:
 
 compose-run:
 	$(COMPOSE) run --rm scraper
+
+# Run performance bench setup (populates Redis Stream with 5M items)
+# Default count if not specified externally
+count ?= 1000
+
+load-bench-fill:
+	@echo "Populating Redis stream with $(count) messages..."
+	uv run --isolated --with redis --with python-dotenv --env-file .env tests/load_bench/fill_redis_stream.py --host 127.0.0.1 --count $(count)
+
+load-bench-clean:
+	@echo "Cleaning Redis stream..."
+	podman exec -it imdb_redis redis-cli XTRIM movies_stream MAXLEN 100	

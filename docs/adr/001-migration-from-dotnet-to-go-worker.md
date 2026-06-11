@@ -43,6 +43,7 @@ Go compiled binaries represent a highly optimal balance of rapid development spe
 3. **Rapid Startup**: Native execution drops cold-start times to milliseconds, enabling fast auto-scaling.
 4. **Idiomatic Concurrency**: Go's native goroutines and channel model provide efficient execution for concurrent worker pools with negligible system thread context-switching.
 5. **No Runtime Dependencies**: The output is a single, self-contained binary, simplifying security scanning and reducing potential CVE vulnerabilities.
+6. **Experimental Validation**: The decision is backed by solid empirical data from a 10M message load test. Go demonstrated a 2.5x throughput gain, 5.5x memory reduction, and 50x faster cold starts. See the complete telemetry in the [Data Ingestion Benchmark Report](../benchmarks/dotnet-vs-go-ingestion.md).
 
 ### Negative / Neutral (Drawbacks)
 1. **Migration Effort**: Requires rewriting the existing .NET consumer logic, JSON validation, and Postgres UPSERT queries in Go.

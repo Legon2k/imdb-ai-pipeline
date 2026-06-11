@@ -15,7 +15,9 @@ import (
 )
 
 const PayloadField = "payload"
+const logBatchSize = 1000
 
+// MoviesProcessedTotal tracks raw processed message counts
 var MoviesProcessedTotal = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "movies_processed_total",
@@ -24,23 +26,34 @@ var MoviesProcessedTotal = prometheus.NewCounterVec(
 	[]string{"status"},
 )
 
+// MessageProcessingDuration tracks high-resolution latency percentiles
+var MessageProcessingDuration = prometheus.NewHistogram(
+	prometheus.HistogramOpts{
+		Name:    "message_processing_duration_seconds",
+		Help:    "Latency of a single message processing run (from read to ACK) in seconds.",
+		Buckets: []float64{0.00002, 0.00005, 0.0001, 0.0002, 0.0004, 0.0008, 0.0015, 0.003, 0.006, 0.012, 0.025, 0.05, 0.1},
+	},
+)
+
 type Worker struct {
-	redisClient   *redis.Client
-	repo          *db.Repository
-	streamName    string
-	consumerGroup string
-	consumerName  string
-	logger        *slog.Logger
+	redisClient    *redis.Client
+	repo           *db.Repository
+	streamName     string
+	consumerGroup  string
+	consumerName   string
+	logger         *slog.Logger
+	simulateDbSave bool
 }
 
-func NewWorker(rc *redis.Client, repo *db.Repository, stream, group, consumer string, logger *slog.Logger) *Worker {
+func NewWorker(rc *redis.Client, repo *db.Repository, stream, group, consumer string, logger *slog.Logger, simulateDbSave bool) *Worker {
 	return &Worker{
-		redisClient:   rc,
-		repo:          repo,
-		streamName:    stream,
-		consumerGroup: group,
-		consumerName:  consumer,
-		logger:        logger,
+		redisClient:    rc,
+		repo:           repo,
+		streamName:     stream,
+		consumerGroup:  group,
+		consumerName:   consumer,
+		logger:         logger,
+		simulateDbSave: simulateDbSave,
 	}
 }
 
@@ -53,13 +66,16 @@ func (w *Worker) EnsureConsumerGroup(ctx context.Context) error {
 }
 
 func (w *Worker) Start(ctx context.Context) {
+	var msgCounter int64 = 0
+	batchStart := time.Now()
+
 	for {
 		select {
 		case <-ctx.Done():
 			w.logger.Info("stopping consumer loop due to cancellation request")
 			return
 		default:
-			err := w.pollAndProcess(ctx)
+			err := w.pollAndProcess(ctx, &msgCounter, &batchStart)
 			if err != nil {
 				w.logger.Error("error processing message. Retrying...", slog.String("error", err.Error()))
 
@@ -73,7 +89,7 @@ func (w *Worker) Start(ctx context.Context) {
 	}
 }
 
-func (w *Worker) pollAndProcess(ctx context.Context) error {
+func (w *Worker) pollAndProcess(ctx context.Context, msgCounter *int64, batchStart *time.Time) error {
 	// 1. Try reading new messages (">")
 	entries, err := w.readFromStream(ctx, ">")
 	if err != nil {
@@ -90,7 +106,7 @@ func (w *Worker) pollAndProcess(ctx context.Context) error {
 
 	// 3. Process the read entry if exists
 	if len(entries) > 0 {
-		return w.processEntry(ctx, entries[0])
+		return w.processEntry(ctx, entries[0], msgCounter, batchStart)
 	}
 
 	// 4. If no entries found, wait 1 second
@@ -124,39 +140,52 @@ func (w *Worker) readFromStream(ctx context.Context, id string) ([]redis.XMessag
 	return nil, nil
 }
 
-func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage) error {
+func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCounter *int64, batchStart *time.Time) error {
+	// Start high-resolution latency timer
+	start := time.Now()
+
 	rawPayload, exists := entry.Values[PayloadField]
 	if !exists {
 		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
-		w.logger.Warn("skipping stream entry: missing payload field", slog.String("message_id", entry.ID))
+		if w.logger.Enabled(ctx, slog.LevelDebug) {
+			w.logger.Debug("skipping stream entry: missing payload field", slog.String("message_id", entry.ID))
+		}
 		return w.acknowledge(ctx, entry.ID)
 	}
 
 	payloadStr, ok := rawPayload.(string)
 	if !ok {
 		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
-		w.logger.Warn("skipping stream entry: invalid payload type", slog.String("message_id", entry.ID))
+		if w.logger.Enabled(ctx, slog.LevelDebug) {
+			w.logger.Debug("skipping stream entry: invalid payload type", slog.String("message_id", entry.ID))
+		}
 		return w.acknowledge(ctx, entry.ID)
 	}
 
 	var movie model.MoviePayload
 	if err := json.Unmarshal([]byte(payloadStr), &movie); err != nil {
 		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
-		w.logger.Warn("skipping stream entry: invalid movie payload", slog.String("message_id", entry.ID), slog.String("error", err.Error()))
+		if w.logger.Enabled(ctx, slog.LevelDebug) {
+			w.logger.Debug("skipping stream entry: invalid movie payload", slog.String("message_id", entry.ID), slog.String("error", err.Error()))
+		}
 		return w.acknowledge(ctx, entry.ID)
 	}
 
 	// Validate against contract rules
 	if err := movie.Validate(); err != nil {
 		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
-		w.logger.Warn("skipping stream entry: contract validation failed", slog.String("message_id", entry.ID), slog.String("error", err.Error()))
+		if w.logger.Enabled(ctx, slog.LevelDebug) {
+			w.logger.Debug("skipping stream entry: contract validation failed", slog.String("message_id", entry.ID), slog.String("error", err.Error()))
+		}
 		return w.acknowledge(ctx, entry.ID)
 	}
 
-	// SQL Write
-	if err := w.repo.SaveMovieToDatabase(ctx, &movie); err != nil {
-		MoviesProcessedTotal.WithLabelValues("db_error").Inc()
-		return fmt.Errorf("failed to save movie to database: %w", err)
+	// SQL Write (or simulated bypass)
+	if !w.simulateDbSave {
+		if err := w.repo.SaveMovieToDatabase(ctx, &movie); err != nil {
+			MoviesProcessedTotal.WithLabelValues("db_error").Inc()
+			return fmt.Errorf("failed to save movie to database: %w", err)
+		}
 	}
 
 	// Acknowledge stream entry
@@ -164,8 +193,24 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage) error {
 		return err
 	}
 
+	// Record success metric and measure processing latency
 	MoviesProcessedTotal.WithLabelValues("success").Inc()
-	w.logger.Info("saved to DB and acknowledged stream entry", slog.String("title", movie.Title), slog.String("message_id", entry.ID))
+	MessageProcessingDuration.Observe(time.Since(start).Seconds())
+
+	if w.logger.Enabled(ctx, slog.LevelDebug) {
+		w.logger.Debug("saved to DB and acknowledged stream entry", slog.String("title", movie.Title), slog.String("message_id", entry.ID))
+	}
+	// Increment message counter
+	*msgCounter++
+
+	// Check if batch limit reached
+	if *msgCounter%int64(logBatchSize) == 0 {
+		elapsed := time.Since(*batchStart)
+		rps := float64(logBatchSize) / elapsed.Seconds()
+		w.logger.Info("[BATCH] Processed: " + fmt.Sprint(*msgCounter) + " | Batch Time: " + fmt.Sprintf("%.2f", elapsed.Seconds()) + "s | Batch RPS: " + fmt.Sprintf("%.2f", rps))
+		*batchStart = time.Now()
+	}
+
 	return nil
 }
 
