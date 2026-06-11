@@ -3,8 +3,14 @@
 CONTAINER_ENGINE ?= docker
 COMPOSE ?= $(CONTAINER_ENGINE) compose
 
-SHELL := pwsh.exe
-.SHELLFLAGS := -NoProfile -Command
+ifeq ($(OS),Windows_NT)
+    SHELL := pwsh.exe
+    .SHELLFLAGS := -NoProfile -Command
+else
+    # Настройки для Linux / macOS
+    SHELL := /bin/bash
+    .SHELLFLAGS := -c
+endif
 
 install:
 	uv sync --project src/scraper_python
