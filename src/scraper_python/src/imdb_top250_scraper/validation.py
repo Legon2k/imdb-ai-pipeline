@@ -26,7 +26,13 @@ def validate_movies(movies: list[Movie]) -> None:
             # Validate against the shared contract
             MoviePayload(**movie)
         except Exception as e:
-            raise ValueError(f"Movie #{index} failed validation: {e}") from e
+            # Provide more detailed error message with movie info
+            movie_title = movie.get("title", "Unknown")
+            movie_url = movie.get("imdb_url", "N/A")
+            raise ValueError(
+                f"Movie #{index} ({movie_title}) failed validation: {e}\n"
+                f"URL: {movie_url}\nMovie data: {movie}"
+            ) from e
 
         # Additional rank validation
         if movie.get("rank") != index:

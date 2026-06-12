@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -37,10 +36,6 @@ func (m *MoviePayload) Validate() error {
 
 	if m.Rating < 0.0 || m.Rating > 10.0 {
 		return fmt.Errorf("rating must be between 0 and 10, got %f", m.Rating)
-	}
-
-	if strings.TrimSpace(m.Votes) == "" {
-		return errors.New("votes cannot be empty")
 	}
 
 	return nil

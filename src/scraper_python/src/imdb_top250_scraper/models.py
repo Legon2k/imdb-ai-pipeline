@@ -25,8 +25,8 @@ class RawMovie(TypedDict):
     rank: int
     imdb_id: str | None
     title: str
-    rating: float | None
-    votes: str | None
+    rating: float  # Now always has a value (0.0 for new movies)
+    votes: str  # Now always has a value (empty string for new movies)
     votes_count: int | None
     imdb_url: str | None
     image_url: NotRequired[str | None]

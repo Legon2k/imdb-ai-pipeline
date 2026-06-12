@@ -50,10 +50,30 @@ async def extract_movies(
         """
         items => items.map((item, index) => {
             const titleText = item.querySelector(".ipc-title__text")?.textContent?.trim() || "";
-            const ratingText = (
+            
+            // Try multiple selectors for rating to improve robustness
+            let ratingText = "";
+            const ratingSpan = 
                 item.querySelector("span[aria-label*='IMDb rating']") ||
-                item.querySelector("span[aria-label*='rating']")
-            )?.textContent?.trim() || "";
+                item.querySelector("span[aria-label*='rating']") ||
+                item.querySelector(".ratingGroup--imdb-rating span");
+            
+            if (ratingSpan) {
+                ratingText = ratingSpan.textContent?.trim() || "";
+            }
+            
+            // If still empty, try to find any span with numeric rating pattern
+            if (!ratingText) {
+                const spans = item.querySelectorAll("span");
+                for (const span of spans) {
+                    const text = span.textContent?.trim() || "";
+                    if (/^\\d+(?:\\.\\d+)?\\s*\\(/.test(text)) {
+                        ratingText = text;
+                        break;
+                    }
+                }
+            }
+            
             const link = item.querySelector("a.ipc-title-link-wrapper")?.href || null;
             const image = item.querySelector("img")?.src || null;
 
@@ -75,6 +95,16 @@ async def extract_movies(
     for movie in raw_movies:
         rating, votes, votes_count = parse_rating(movie.pop("rating_text"))
         imdb_id = extract_imdb_id(movie.get("imdb_url"))
+
+        # Log warning if rating is 0 (new movie without rating)
+        if rating == 0.0:
+            LOGGER.warning(
+                "Movie #%d (%s) has no rating (new movie). rating_text='%s', url='%s'",
+                movie["rank"],
+                movie["title"],
+                movie.get("rating_text", ""),
+                movie.get("imdb_url", ""),
+            )
 
         # Map to shared MoviePayload contract - only keep required fields
         movie_payload: Movie = {

@@ -1,4 +1,7 @@
-IMDB_TOP_URL = "https://www.imdb.com/chart/top/"
+IMDB_TOP_URL = "https://www.imdb.com/chart/top/"  # IMDb Top 250 movies
+# IMDB_TOP_URL = "https://www.imdb.com/chart/moviemeter/"  # Most popular movies
+# IMDB_TOP_URL = "https://www.imdb.com/chart/toptv/"     # Top 250 TV shows
+# IMDB_TOP_URL = "https://www.imdb.com/chart/tvmeter/"   # Most popular TV shows
 MOVIE_SELECTOR = ".ipc-metadata-list-summary-item"
 EXPECTED_MOVIE_COUNT = 250
 DEFAULT_RETRIES = 3

@@ -81,6 +81,8 @@ services:
       context: ./src/worker_dotnet
       dockerfile: Dockerfile
     restart: unless-stopped
+    profiles:
+      - manual
     environment:      
       - Logging__LogLevel__Default=${LOG_LEVEL}
     env_file:
@@ -181,8 +183,8 @@ services:
         condition: service_started
       worker_ai:
         condition: service_started
-      worker:
-        condition: service_started
+      #worker:
+      #  condition: service_started
     networks:
       - internal_network
 

@@ -1,15 +1,17 @@
 import re
 
 
-def parse_rating(raw_rating: str) -> tuple[float | None, str | None, int | None]:
+def parse_rating(raw_rating: str) -> tuple[float, str, int | None]:
     cleaned = " ".join(raw_rating.split()).replace("\xa0", " ")
     match = re.search(r"(?P<rating>\d+(?:\.\d+)?)\s*(?:\((?P<votes>[^)]+)\))?", cleaned)
 
     if not match:
-        return None, None, None
+        # Return default values for movies without rating (new movies)
+        # rating: 0.0, votes: empty string, votes_count: None
+        return 0.0, "", None
 
     votes = match.group("votes")
-    return float(match.group("rating")), votes, parse_votes_count(votes)
+    return float(match.group("rating")), votes or "", parse_votes_count(votes)
 
 
 def parse_votes_count(raw_votes: str | None) -> int | None:
