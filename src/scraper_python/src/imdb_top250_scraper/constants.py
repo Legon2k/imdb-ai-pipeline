@@ -1,9 +1,10 @@
-IMDB_TOP_URL = "https://www.imdb.com/chart/top/"  # IMDb Top 250 movies
-# IMDB_TOP_URL = "https://www.imdb.com/chart/moviemeter/"  # Most popular movies
-# IMDB_TOP_URL = "https://www.imdb.com/chart/toptv/"     # Top 250 TV shows
-# IMDB_TOP_URL = "https://www.imdb.com/chart/tvmeter/"   # Most popular TV shows
+IMDB_CHARTS = [
+    ("https://www.imdb.com/chart/top/", 250, "IMDb Top 250 movies"),
+    ("https://www.imdb.com/chart/moviemeter/", 100, "Most popular movies"),
+    ("https://www.imdb.com/chart/toptv/", 250, "Top 250 TV shows"),
+    ("https://www.imdb.com/chart/tvmeter/", 100, "Most popular TV shows"),
+]
 MOVIE_SELECTOR = ".ipc-metadata-list-summary-item"
-EXPECTED_MOVIE_COUNT = 250
 DEFAULT_RETRIES = 3
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_LOCALE = "en-US"

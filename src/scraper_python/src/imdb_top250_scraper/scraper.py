@@ -9,8 +9,7 @@ from imdb_top250_scraper.constants import (
     DEFAULT_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
     DEFAULT_USER_AGENT,
-    EXPECTED_MOVIE_COUNT,
-    IMDB_TOP_URL,
+    IMDB_CHARTS,
     MOVIE_SELECTOR,
 )
 from imdb_top250_scraper.models import Movie
@@ -19,6 +18,12 @@ from imdb_top250_scraper.validation import validate_movies
 
 # Import our new Redis publisher
 from .redis_publisher import RedisPublisher
+
+search_term = "/top/"  # Will be used to identify the chart to scrape
+
+IMDB_CHART_URL, CHART_EXPECTED_MOVIE_COUNT, CHART_NAME = next(
+    (i for i in IMDB_CHARTS if search_term in i[0]), None
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -138,7 +143,13 @@ async def scrape_imdb_top_250(
 
     for attempt in range(1, retries + 1):
         try:
-            LOGGER.info("Scraping IMDb Top 250, attempt %s of %s", attempt, retries)
+            LOGGER.info(
+                "Scraping %s, count: %s, attempt %s of %s",
+                CHART_NAME,
+                CHART_EXPECTED_MOVIE_COUNT,
+                attempt,
+                retries,
+            )
             return await scrape_once(
                 include_images,
                 limit,
@@ -179,16 +190,16 @@ async def scrape_once(
             page = await context.new_page()
             await page.route("**/*", block_heavy_resources)
 
-            await page.goto(IMDB_TOP_URL, wait_until="domcontentloaded", timeout=timeout_ms)
+            await page.goto(IMDB_CHART_URL, wait_until="domcontentloaded", timeout=timeout_ms)
             await page.wait_for_selector(MOVIE_SELECTOR, timeout=timeout_ms)
             movie_count_expression = (
                 f"() => document.querySelectorAll('{MOVIE_SELECTOR}').length "
-                f">= {EXPECTED_MOVIE_COUNT}"
+                f">= {CHART_EXPECTED_MOVIE_COUNT}"
             )
             await page.wait_for_function(movie_count_expression, timeout=timeout_ms)
 
             results = await extract_movies(page, include_images=include_images, limit=limit)
-            expected_count = limit or EXPECTED_MOVIE_COUNT
+            expected_count = limit or CHART_EXPECTED_MOVIE_COUNT
             if len(results) < expected_count:
                 raise RuntimeError(f"Expected {expected_count} movies, got {len(results)}.")
 
