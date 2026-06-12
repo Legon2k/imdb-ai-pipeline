@@ -20,10 +20,10 @@ class ParseRatingTest(unittest.TestCase):
         self.assertEqual(parse_rating("9.3\n (3.2M)"), (9.3, "3.2M", 3_200_000))
 
     def test_parse_rating_without_votes(self):
-        self.assertEqual(parse_rating("8.2"), (8.2, None, None))
+        self.assertEqual(parse_rating("8.2"), (8.2, "", None))
 
     def test_parse_rating_empty_value(self):
-        self.assertEqual(parse_rating(""), (None, None, None))
+        self.assertEqual(parse_rating(""), (0.0, "", None))
 
     def test_parse_votes_count_with_suffixes(self):
         self.assertEqual(parse_votes_count("116K"), 116_000)
