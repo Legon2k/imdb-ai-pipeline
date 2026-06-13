@@ -11,6 +11,7 @@ from imdb_top250_scraper.constants import (
     DEFAULT_USER_AGENT,
     IMDB_CHARTS,
     MOVIE_SELECTOR,
+    ChartInfo,
 )
 from imdb_top250_scraper.models import Movie
 from imdb_top250_scraper.parsing import extract_imdb_id, parse_rating
@@ -18,12 +19,6 @@ from imdb_top250_scraper.validation import validate_movies
 
 # Import our new Redis publisher
 from .redis_publisher import RedisPublisher
-
-search_term = "/top/"  # Will be used to identify the chart to scrape
-
-IMDB_CHART_URL, CHART_EXPECTED_MOVIE_COUNT, CHART_NAME = next(
-    (i for i in IMDB_CHARTS if search_term in i[0]), None
-)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -131,6 +126,7 @@ async def extract_movies(
 
 
 async def scrape_imdb_top_250(
+    chart: str = "top",
     include_images: bool = True,
     limit: int | None = None,
     retries: int = DEFAULT_RETRIES,
@@ -141,16 +137,21 @@ async def scrape_imdb_top_250(
     """Entry point with retry logic for scraping IMDb."""
     last_error: Exception | None = None
 
+    search_term = f"/{chart}/"  # Will be used to identify the chart to scrape
+
+    chartInfo = next((i for i in IMDB_CHARTS if search_term in i.url), IMDB_CHARTS[0])
+
     for attempt in range(1, retries + 1):
         try:
             LOGGER.info(
                 "Scraping %s, count: %s, attempt %s of %s",
-                CHART_NAME,
-                CHART_EXPECTED_MOVIE_COUNT,
+                chartInfo.description,
+                chartInfo.limit,
                 attempt,
                 retries,
             )
             return await scrape_once(
+                chartInfo,
                 include_images,
                 limit,
                 timeout_seconds,
@@ -169,6 +170,7 @@ async def scrape_imdb_top_250(
 
 
 async def scrape_once(
+    chartInfo: ChartInfo,
     include_images: bool,
     limit: int | None,
     timeout_seconds: int,
@@ -190,16 +192,15 @@ async def scrape_once(
             page = await context.new_page()
             await page.route("**/*", block_heavy_resources)
 
-            await page.goto(IMDB_CHART_URL, wait_until="domcontentloaded", timeout=timeout_ms)
+            await page.goto(chartInfo.url, wait_until="domcontentloaded", timeout=timeout_ms)
             await page.wait_for_selector(MOVIE_SELECTOR, timeout=timeout_ms)
             movie_count_expression = (
-                f"() => document.querySelectorAll('{MOVIE_SELECTOR}').length "
-                f">= {CHART_EXPECTED_MOVIE_COUNT}"
+                f"() => document.querySelectorAll('{MOVIE_SELECTOR}').length >= {chartInfo.limit}"
             )
             await page.wait_for_function(movie_count_expression, timeout=timeout_ms)
 
             results = await extract_movies(page, include_images=include_images, limit=limit)
-            expected_count = limit or CHART_EXPECTED_MOVIE_COUNT
+            expected_count = limit or chartInfo.limit
             if len(results) < expected_count:
                 raise RuntimeError(f"Expected {expected_count} movies, got {len(results)}.")
 

@@ -73,6 +73,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Omit image_url from output records.",
     )
+    parser.add_argument(
+        "--chart",
+        choices=["top", "moviemeter", "toptv", "tvmeter"],
+        default="top",
+        help="Chart to parse. Default: top",
+    )
     return parser.parse_args()
 
 
@@ -85,6 +91,7 @@ async def main() -> None:
 
     # Call the scraper without file output arguments
     movies = await scrape_imdb_top_250(
+        chart=args.chart,
         include_images=not args.no_images,
         limit=args.limit,
         retries=args.retries,
