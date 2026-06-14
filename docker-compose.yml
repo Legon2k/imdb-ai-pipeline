@@ -134,6 +134,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    user: "0:0"
+    volumes:
+      - /run/user/1000/podman/podman.sock:/var/run/podman/podman.sock
+    environment:
+      - CONTAINER_SOCKET_PATH=unix:///var/run/podman/podman.sock
     networks:
       - internal_network
     healthcheck:
