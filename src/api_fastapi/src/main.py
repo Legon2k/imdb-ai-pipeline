@@ -1,19 +1,23 @@
 import io
 import json
+import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 import asyncpg
 import pandas as pd
 import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from podman import PodmanClient
 from pydantic import BaseModel
 
 sys.path.insert(0, os.path.dirname(__file__))
 from contracts import DatabaseMovie
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Retrieve the application version from environment variables (Runtime ENV)
 APP_VERSION = os.getenv("APP_VERSION", "0.0.0-dev")
@@ -42,6 +46,10 @@ class MovieResponse(DatabaseMovie):
 class EnrichmentResponse(BaseModel):
     message: str
     queued_tasks: int
+
+
+class ScrapeResponse(BaseModel):
+    message: str
 
 
 class RecoverResponse(BaseModel):
@@ -321,3 +329,30 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
         "message": "AI enrichment tasks successfully added to the background stream.",
         "queued_tasks": len(tasks),
     }
+
+
+CONTAINER_SOCKET_PATH = os.getenv("CONTAINER_SOCKET_PATH", "unix:///var/run/podman/podman.sock")
+
+
+@app.post(
+    "/movies/scrape",
+    status_code=202,
+    summary="Trigger Movie Scraping (Async)",
+    tags=["Scraping"],
+    response_model=ScrapeResponse,
+)
+async def trigger_scraping(chart: Literal["top", "moviemeter", "toptv", "tvmeter"] = "moviemeter"):
+    """
+    Triggers the scraping of IMDb movies for the specified chart.
+    Returns HTTP 202 Accepted instantly.
+    """
+    # background_tasks.add_task(run_scraper_task, chart)
+    logging.info(f"Using container socket: {CONTAINER_SOCKET_PATH}")
+    with PodmanClient(base_url=CONTAINER_SOCKET_PATH) as client:
+        client.containers.run(
+            image="imdb_scraper:latest",
+            command=[f"--chart={chart}"],
+            remove=False,
+            detach=True,
+        )
+        return {"message": "Scraping triggered."}
