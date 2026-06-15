@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import asyncpg
@@ -16,10 +17,75 @@ from pydantic import BaseModel
 sys.path.insert(0, os.path.dirname(__file__))
 from contracts import DatabaseMovie
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-
 # Retrieve the application version from environment variables (Runtime ENV)
 APP_VERSION = os.getenv("APP_VERSION", "0.0.0-dev")
+
+
+# --- STRUCTURED JSON LOGGING SETUP ---
+class ApiJsonFormatter(logging.Formatter):
+    """
+    Structured JSON formatter for the FastAPI API Gateway.
+    Converts logs (including Uvicorn request logs) to standard JSON format.
+    """
+
+    def __init__(self, service_name: str = "imdb-api"):
+        super().__init__()
+        self.service_name = service_name
+
+    def format(self, record):
+        message = record.getMessage()
+
+        log_record = {
+            "timestamp": datetime.now(UTC)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": message,
+            "service_name": self.service_name,
+            "version": APP_VERSION,
+        }
+
+        # Extract HTTP metadata if it's a uvicorn access log to make API requests queryable [1.1]
+        if record.name == "uvicorn.access" and len(record.args) >= 5:
+            log_record["http"] = {
+                "client_address": record.args[0],
+                "method": record.args[1],
+                "path": record.args[2],
+                "status_code": record.args[4],
+            }
+
+        if record.exc_info:
+            log_record["exception"] = self.formatException(record.exc_info)
+
+        return json.dumps(log_record)
+
+
+def setup_api_logging(service_name: str = "imdb-api", level: int = logging.INFO):
+    """Configures root and uvicorn loggers to use our custom JSON formatter [1.1]."""
+    formatter = ApiJsonFormatter(service_name)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+
+    # Configure Root Logger
+    root_logger = logging.getLogger()
+    root_logger.handlers = []
+    root_logger.addHandler(handler)
+    root_logger.setLevel(level)
+
+    # Intercept and configure Uvicorn loggers to enforce JSON output [1.1]
+    for logger_name in ["uvicorn", "uvicorn.access", "uvicorn.error"]:
+        logger = logging.getLogger(logger_name)
+        logger.handlers = []
+        logger.addHandler(handler)
+        logger.setLevel(level)
+        logger.propagate = False  # Avoid log duplication in root logger
+
+
+RAW_LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
+LOG_LEVEL = getattr(logging, RAW_LOG_LEVEL, logging.INFO)
+setup_api_logging(service_name="imdb-api", level=LOG_LEVEL)
+
 
 # Global variables to hold our connections
 db_pool = None
@@ -29,10 +95,6 @@ AI_STREAM_MAXLEN = int(os.getenv("AI_STREAM_MAXLEN", "1000"))
 
 
 # --- API DATA CONTRACTS (Pydantic) ---
-# Use DatabaseMovie from contracts for GET /movies response
-# MoviePayload and AITaskPayload are used internally for Redis operations
-
-
 class MovieResponse(DatabaseMovie):
     """
     API response model for GET /movies.
@@ -79,7 +141,7 @@ async def lifespan(app: FastAPI):
             password=os.getenv("POSTGRES_PASSWORD", "supersecretpassword"),
             database=os.getenv("POSTGRES_DB", "imdb_ai_db"),
             host=os.getenv("POSTGRES_HOST", "localhost"),
-            port=os.getenv("POSTGRES_PORT", 5432),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
         )
 
         # Initialize Redis connection
@@ -330,7 +392,7 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
     }
 
 
-CONTAINER_SOCKET_PATH = os.getenv("CONTAINER_SOCKET_PATH", "unix:///var/run/podman/podman.sock")
+CONTAINER_SOCKET_PATH = os.getenv("CONTAINER_SOCKET_PATH", "unix:///var/run/docker.sock")
 
 
 @app.post(
@@ -351,7 +413,7 @@ async def trigger_scraping(chart: Literal["top", "moviemeter", "toptv", "tvmeter
 
     from docker import DockerClient
 
-    # FIX: Initialize the client directly without 'with' statement
+    # Initialize the client directly
     client = DockerClient(base_url=CONTAINER_SOCKET_PATH)
 
     client.containers.run(

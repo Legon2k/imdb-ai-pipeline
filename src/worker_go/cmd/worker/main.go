@@ -12,6 +12,7 @@ import (
 	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/config"
 	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/db"
 	rWorker "github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/redis"
+	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/telemetry" // <--- Импорт пакета телеметрии
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
@@ -21,22 +22,27 @@ func main() {
 	// Capture cold start time
 	startTime := time.Now()
 
+	// Read version from environment variable with fallback (moved up to inject into logger)
+	version := os.Getenv("APP_VERSION")
+	if version == "" {
+		version = "0.0.0-dev"
+	}
+
 	// Load settings first to get log level
 	cfg, err := config.Load()
 	if err != nil {
-		// Fallback logger for initialization errors
+		// Fallback logger for initialization errors (unformatted plain JSON)
 		fallbackLogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 		fallbackLogger.Error("failed to load configuration", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 
-	// Logger initialization with configured log level (JSON matches modern observability stacks)
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.GetLogLevel()}))
-	slog.SetDefault(logger)
+	// Standardize structured JSON logger with dynamic level and global metadata
+	logger := telemetry.ConfigureLogger(version, cfg.GetLogLevel())
 
 	// Register Prometheus metrics
 	prometheus.MustRegister(rWorker.MoviesProcessedTotal)
-	prometheus.MustRegister(rWorker.MessageProcessingDuration) // Registered the new latency histogram
+	prometheus.MustRegister(rWorker.MessageProcessingDuration)
 
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
@@ -50,15 +56,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Read version from environment variable with fallback
-	version := os.Getenv("APP_VERSION")
-
-	if version == "" {
-		version = "0.0.0-dev"
-	}
-
 	logger.Info("IMDB Worker started",
-		slog.String("version", version),
 		slog.String("logLevel", cfg.LogLevel),
 		slog.Bool("simulateDbSave", cfg.IsSimulateDbSave()),
 		slog.String("stream", cfg.StreamName),

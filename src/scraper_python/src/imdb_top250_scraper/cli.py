@@ -9,6 +9,7 @@ from imdb_top250_scraper.constants import (
     DEFAULT_TIMEOUT_SECONDS,
     DEFAULT_USER_AGENT,
 )
+from imdb_top250_scraper.logger import setup_scraper_logging
 from imdb_top250_scraper.scraper import scrape_imdb_top_250
 
 # Retrieve the application version from environment variables (Runtime ENV)
@@ -30,9 +31,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=f"Scrape IMDb Top 250 movies and push to Redis. Version: {APP_VERSION}"
     )
-
-    # File output arguments (--output, --format, --pretty) were removed
-    # since we now use a message broker (Redis) for data ingestion.
 
     parser.add_argument(
         "--limit",
@@ -85,7 +83,9 @@ def parse_args() -> argparse.Namespace:
 async def main() -> None:
     """Main async entry point."""
     args = parse_args()
-    logging.basicConfig(level=args.log_level, format="%(levelname)s: %(message)s")
+
+    # Initialize structured JSON logging using the user-provided log level
+    setup_scraper_logging(service_name="imdb-scraper", level=args.log_level)
 
     LOGGER.info(f"Scraping IMDb starting. Version: {APP_VERSION}.")
 

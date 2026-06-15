@@ -1,7 +1,9 @@
 import asyncio
+import json
 import logging
 import os
 import sys
+from datetime import UTC, datetime
 from time import perf_counter
 
 import asyncpg
@@ -50,10 +52,81 @@ LLM_SUMMARY_CHARACTERS = Histogram(
     buckets=(50, 100, 150, 200, 300, 500),
 )
 
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+
+# --- STRUCTURED JSON LOGGING WITH CONTEXT ADAPTER ---
+class WorkerJsonFormatter(logging.Formatter):
+    """
+    Structured JSON formatter for the AI Worker.
+    Outputs logs in JSON format with standard metadata and traceID injection [1.5].
+    """
+
+    def __init__(self, service_name: str = "imdb-ai-worker"):
+        super().__init__()
+        self.service_name = service_name
+
+    def format(self, record):
+        log_record = {
+            "timestamp": datetime.now(UTC)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "service_name": self.service_name,
+            "version": APP_VERSION,
+        }
+
+        # Inject trace correlation metadata if appended via LoggerAdapter [1.5]
+        if hasattr(record, "traceID"):
+            log_record["traceID"] = record.traceID
+        if hasattr(record, "spanID"):
+            log_record["spanID"] = record.spanID
+
+        if record.exc_info:
+            log_record["exception"] = self.formatException(record.exc_info)
+
+        return json.dumps(log_record)
+
+
+class TraceLoggerAdapter(logging.LoggerAdapter):
+    """
+    Logger adapter to dynamically inject trace context into log record extra fields [3].
+    """
+
+    def process(self, msg, kwargs):
+        extra = kwargs.setdefault("extra", {})
+        if self.extra:
+            extra.update(self.extra)
+        return msg, kwargs
+
+
+def setup_worker_logging(service_name: str = "imdb-ai-worker", level: str | int = logging.INFO):
+    """Configures the root logger to output JSON to stdout."""
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(WorkerJsonFormatter(service_name))
+
+    root_logger = logging.getLogger()
+    root_logger.handlers = []
+    root_logger.addHandler(handler)
+    root_logger.setLevel(level)
+
+
+def parse_traceparent(traceparent: str) -> tuple[str | None, str | None]:
+    """
+    Safely parses W3C traceparent headers to extract traceID and spanID [1].
+    Format: version-trace_id-parent_id-trace_flags
+    Example: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+    """
+    if not traceparent:
+        return None, None
+    parts = traceparent.split("-")
+    if len(parts) >= 3 and len(parts[1]) == 32 and len(parts[2]) == 16:
+        return parts[1], parts[2]
+    return None, None
+
+
+# Initialize JSON logging on application startup
+setup_worker_logging(service_name="imdb-ai-worker", level=os.getenv("LOG_LEVEL", "INFO"))
 LOGGER = logging.getLogger("imdb_ai_worker")
 
 
@@ -164,13 +237,29 @@ async def main():
                     )
                     continue
 
+                # ---> PRE-VALIDATION TRACE CONTEXT EXTRACTION <---
+                # Extract trace context early so that even validation
+                # failures contain trace IDs [1.3]
+                traceparent = None
+                try:
+                    raw_json = json.loads(message)
+                    traceparent = raw_json.get("traceparent")
+                except Exception:
+                    pass
+
+                trace_id, span_id = parse_traceparent(traceparent)
+                task_logger = TraceLoggerAdapter(
+                    LOGGER, {"traceID": trace_id, "spanID": span_id} if trace_id else {}
+                )
+                # ------------------------------------------------
+
                 # ---> PYDANTIC VALIDATION <---
                 try:
-                    # Validate raw JSON against strict contract (contracts/schemas.json)
+                    # Validate raw JSON against strict contract
                     task = AITaskPayload.model_validate_json(message)
                 except ValidationError as ve:
                     AI_TASKS_PROCESSED_TOTAL.labels(status="contract_violation").inc()
-                    LOGGER.warning(
+                    task_logger.warning(
                         "event=contract_violation stream=%s group=%s consumer=%s "
                         "message_id=%s error=%r",
                         STREAM_NAME,
@@ -180,7 +269,7 @@ async def main():
                         ve,
                     )
                     await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
-                    LOGGER.info(
+                    task_logger.info(
                         "event=message_acked stream=%s group=%s message_id=%s "
                         "reason=contract_violation",
                         STREAM_NAME,
@@ -189,7 +278,7 @@ async def main():
                     )
                     continue  # Skip invalid payloads
 
-                LOGGER.info(
+                task_logger.info(
                     "event=task_started stream=%s group=%s consumer=%s message_id=%s "
                     "movie_id=%s rank=%s title=%r",
                     STREAM_NAME,
@@ -230,7 +319,7 @@ async def main():
                     )
                 await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
                 AI_TASKS_PROCESSED_TOTAL.labels(status="completed").inc()
-                LOGGER.info(
+                task_logger.info(
                     "event=task_completed stream=%s group=%s consumer=%s message_id=%s "
                     "movie_id=%s rank=%s llm_duration_ms=%s summary_chars=%s",
                     STREAM_NAME,
@@ -245,7 +334,9 @@ async def main():
 
             except Exception as e:
                 AI_TASKS_PROCESSED_TOTAL.labels(status="failed").inc()
-                LOGGER.exception(
+                # Determine safe fallback logger inside exception catch
+                logger_to_use = task_logger if "task_logger" in locals() else LOGGER
+                logger_to_use.exception(
                     "event=task_failed stream=%s group=%s consumer=%s message_id=%s "
                     "movie_id=%s error=%r",
                     STREAM_NAME,
@@ -266,7 +357,7 @@ async def main():
                                 "updated_at = CURRENT_TIMESTAMP WHERE id = $1;",
                                 task.id,
                             )
-                        LOGGER.info(
+                        logger_to_use.info(
                             "event=task_reverted movie_id=%s rank=%s title=%r status=pending",
                             task.id,
                             task.rank,
@@ -274,7 +365,7 @@ async def main():
                         )
                         if message_id is not None:
                             await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
-                            LOGGER.info(
+                            logger_to_use.info(
                                 "event=message_acked stream=%s group=%s message_id=%s "
                                 "reason=task_reverted",
                                 STREAM_NAME,
@@ -282,7 +373,7 @@ async def main():
                                 message_id,
                             )
                     except Exception as db_err:
-                        LOGGER.exception(
+                        logger_to_use.exception(
                             "event=task_revert_failed movie_id=%s rank=%s error=%r",
                             task.id,
                             task.rank,
