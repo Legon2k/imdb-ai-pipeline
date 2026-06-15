@@ -1,3 +1,4 @@
+// File: src/worker_go/internal/redis/consumer.go
 package redis
 
 import (
@@ -6,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/db"
@@ -162,11 +164,41 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 		return w.acknowledge(ctx, entry.ID)
 	}
 
+	// --- DEFENSIVE CONTEXT PROPAGATION EXTRACTION ---
+	var traceparent string
+
+	// Attempt 1: Extract from the JSON payload (populated by FastAPI /enrich)
+	var rawMap map[string]interface{}
+	if err := json.Unmarshal([]byte(payloadStr), &rawMap); err == nil {
+		if tp, ok := rawMap["traceparent"].(string); ok {
+			traceparent = tp
+		}
+	}
+
+	// Attempt 2: Extract from Redis Stream entry metadata fields (populated by python_scraper)
+	if traceparent == "" {
+		if tpVal, exists := entry.Values["traceparent"]; exists {
+			traceparent, _ = tpVal.(string)
+		}
+	}
+
+	// Instantiate a task-scoped contextual logger to encapsulate trace metadata [3]
+	taskLogger := w.logger
+	if traceparent != "" {
+		if traceID, spanID := parseTraceparent(traceparent); traceID != "" {
+			taskLogger = w.logger.With(
+				slog.String("traceID", traceID),
+				slog.String("spanID", spanID),
+			)
+		}
+	}
+	// ------------------------------------------------
+
 	var movie model.MoviePayload
 	if err := json.Unmarshal([]byte(payloadStr), &movie); err != nil {
 		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
-		if w.logger.Enabled(ctx, slog.LevelDebug) {
-			w.logger.Debug("skipping stream entry: invalid movie payload", slog.String("message_id", entry.ID), slog.String("error", err.Error()))
+		if taskLogger.Enabled(ctx, slog.LevelDebug) {
+			taskLogger.Debug("skipping stream entry: invalid movie payload", slog.String("message_id", entry.ID), slog.String("error", err.Error()))
 		}
 		return w.acknowledge(ctx, entry.ID)
 	}
@@ -174,8 +206,8 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 	// Validate against contract rules
 	if err := movie.Validate(); err != nil {
 		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
-		if w.logger.Enabled(ctx, slog.LevelDebug) {
-			w.logger.Debug("skipping stream entry: contract validation failed", slog.String("message_id", entry.ID), slog.String("error", err.Error()))
+		if taskLogger.Enabled(ctx, slog.LevelDebug) {
+			taskLogger.Debug("skipping stream entry: contract validation failed", slog.String("message_id", entry.ID), slog.String("error", err.Error()))
 		}
 		return w.acknowledge(ctx, entry.ID)
 	}
@@ -197,8 +229,8 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 	MoviesProcessedTotal.WithLabelValues("success").Inc()
 	MessageProcessingDuration.Observe(time.Since(start).Seconds())
 
-	if w.logger.Enabled(ctx, slog.LevelDebug) {
-		w.logger.Debug("saved to DB and acknowledged stream entry", slog.String("title", movie.Title), slog.String("message_id", entry.ID))
+	if taskLogger.Enabled(ctx, slog.LevelDebug) {
+		taskLogger.Debug("saved to DB and acknowledged stream entry", slog.String("title", movie.Title), slog.String("message_id", entry.ID))
 	}
 	// Increment message counter
 	*msgCounter++
@@ -207,7 +239,7 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 	if *msgCounter%int64(logBatchSize) == 0 {
 		elapsed := time.Since(*batchStart)
 		rps := float64(logBatchSize) / elapsed.Seconds()
-		w.logger.Info("[BATCH] Processed: " + fmt.Sprint(*msgCounter) + " | Batch Time: " + fmt.Sprintf("%.2f", elapsed.Seconds()) + "s | Batch RPS: " + fmt.Sprintf("%.2f", rps))
+		taskLogger.Info("[BATCH] Processed: " + fmt.Sprint(*msgCounter) + " | Batch Time: " + fmt.Sprintf("%.2f", elapsed.Seconds()) + "s | Batch RPS: " + fmt.Sprintf("%.2f", rps))
 		*batchStart = time.Now()
 	}
 
@@ -216,4 +248,14 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 
 func (w *Worker) acknowledge(ctx context.Context, messageID string) error {
 	return w.redisClient.XAck(ctx, w.streamName, w.consumerGroup, messageID).Err()
+}
+
+// parseTraceparent extracts traceID and spanID from a W3C traceparent header [1].
+// Format: version-trace_id-parent_id-trace_flags (e.g. 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01)
+func parseTraceparent(traceparent string) (string, string) {
+	parts := strings.Split(traceparent, "-")
+	if len(parts) >= 3 && len(parts[1]) == 32 && len(parts[2]) == 16 {
+		return parts[1], parts[2]
+	}
+	return "", ""
 }
