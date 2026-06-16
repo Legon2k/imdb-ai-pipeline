@@ -210,6 +210,30 @@ services:
     networks:
       - internal_network
 
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: imdb_loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    networks:
+      - internal_network      
+
+  alloy:
+    image: grafana/alloy:latest
+    container_name: imdb_alloy
+    restart: unless-stopped
+    ports:
+      - "12345:12345" # Alloy UI Dashboard
+    volumes:
+      - ./infra/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
+    depends_on:
+      - loki
+    networks:
+      - internal_network      
+
   # ==========================================
   # 6. CONTRACT TESTS (Manual)
   # ==========================================

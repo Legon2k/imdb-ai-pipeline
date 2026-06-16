@@ -1,0 +1,35 @@
+// 1. Discover all active containers on the local Docker daemon [1.1.5]
+discovery.docker "local_containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// 2. Filter and tag containers with metadata [1.1.5]
+discovery.relabel "filter_containers" {
+  targets = discovery.docker.local_containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+// 3. Scrape logs from the filtered Docker containers [1.1.5]
+loki.source.docker "scrape_logs" {
+  host    = "unix:///var/run/docker.sock"
+  targets = discovery.relabel.filter_containers.output
+  
+  // Forward everything to our local Loki instance
+  forward_to = [loki.write.local_loki.receiver]
+}
+
+// 4. Export logs directly to our local Loki container over internal network [1.1.5, 1.2.7]
+loki.write "local_loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
