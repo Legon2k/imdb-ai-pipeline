@@ -1,11 +1,17 @@
 apiVersion: 1
 
 datasources:
+  # Твой существующий Prometheus
   - name: Prometheus
     type: prometheus
     access: proxy
-    url: http://imdb_prometheus:9090
+    url: http://prometheus:9090
     isDefault: true
-    editable: false
-    uid: Prometheus
-    orgId: 1
+
+  # ДОБАВЛЯЕМ LOKI
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      maxLines: 1000
