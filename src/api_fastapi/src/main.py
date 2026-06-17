@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 import asyncpg
 import pandas as pd
-import redis.asyncio as redis
+import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
@@ -32,13 +32,21 @@ APP_VERSION = os.getenv("APP_VERSION", "0.0.0-dev")
 
 # --- OPENTELEMETRY TRACING INITIALIZATION ---
 def setup_otel(app: FastAPI, service_name: str = "imdb-api") -> trace.Tracer:
-    """Configures OpenTelemetry TracerProvider, OTLP Exporter, and instruments FastAPI [1.1]."""
+    """Configures OpenTelemetry TracerProvider and OTLP Exporter pointing to Alloy."""
     try:
-        # Define cloud resource identifier
+        # Check if the app is a mocked object (common in unit tests / mocks)
+        if not hasattr(app, "build_middleware_stack"):
+            logging.warning(
+                "FastAPI app instance lacks standard methods. "
+                "Skipping OTel instrumentation (Testing/Mock environment detected)."
+            )
+            # Default to standard tracer, which automatically acts as No-Op if SDK is not set up
+            return trace.get_tracer(service_name)
+
         resource = Resource(attributes={"service.name": service_name})
         provider = TracerProvider(resource=resource)
 
-        # Point to Alloy gRPC receiver inside Docker network [1.2.7]
+        # Point to Alloy gRPC receiver inside Docker network
         otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://alloy:4317")
         exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
 
@@ -52,7 +60,8 @@ def setup_otel(app: FastAPI, service_name: str = "imdb-api") -> trace.Tracer:
         return trace.get_tracer(service_name)
     except Exception as exc:
         logging.warning(f"Failed to initialize OpenTelemetry. Falling back to No-Op: {exc}")
-        return trace.get_noop_tracer()
+        # Standard OTel fallback: get_tracer behaves as No-Op if provider was not registered
+        return trace.get_tracer(service_name)
 
 
 def get_traceparent() -> str:
@@ -194,7 +203,7 @@ async def lifespan(app: FastAPI):
         )
 
         # Initialize Redis connection
-        redis_client = redis.Redis(
+        redis_client = aioredis.Redis(
             host=os.getenv("REDIS_HOST", "localhost"),
             port=int(os.getenv("REDIS_PORT", 6379)),
             decode_responses=True,
