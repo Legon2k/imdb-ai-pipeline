@@ -33,3 +33,28 @@ loki.write "local_loki" {
     url = "http://loki:3100/loki/api/v1/push"
   }
 }
+
+// File: infra/alloy/config.alloy (Add at the end)
+
+// 5. OpenTelemetry OTLP Receiver inside Alloy [1.2.7]
+otelcol.receiver.otlp "otlp_receiver" {
+  grpc {
+    endpoint = "0.0.0.0:4317" // Listen for incoming gRPC traces from your apps [1.2.7]
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces = [otelcol.exporter.otlp.tempo_exporter.input]
+  }
+}
+
+// 6. Export received traces directly to our local Tempo container [1.2.7]
+otelcol.exporter.otlp "tempo_exporter" {
+  client {
+    endpoint = "tempo:4317" // Forward traces to Tempo over internal network [1.2.7]
+    tls {
+      insecure = true
+    }
+  }
+}

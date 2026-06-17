@@ -1,3 +1,4 @@
+# File: worker_ai/main.py
 import asyncio
 import json
 import logging
@@ -9,6 +10,14 @@ from time import perf_counter
 import asyncpg
 import httpx
 import redis.asyncio as redis
+
+# OpenTelemetry imports
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from prometheus_client import Counter, Histogram, start_http_server
 from pydantic import ValidationError
 from redis.exceptions import ResponseError
@@ -23,10 +32,10 @@ APP_VERSION = os.getenv("APP_VERSION", "0.0.0-dev")
 # System configurations
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-PG_USER = os.getenv("POSTGRES_USER", "imdb_admin")
-PG_PASS = os.getenv("POSTGRES_PASSWORD", "supersecretpassword")
-PG_DB = os.getenv("POSTGRES_DB", "imdb_ai_db")
-PG_HOST = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "imdb_admin")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "supersecretpassword")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "imdb_ai_db")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
 LLM_URL = os.getenv("LLM_API_URL", "http://host.docker.internal:11434/api/generate")
 LLM_MODEL = os.getenv("LLM_MODEL_NAME", "gemma:4b")
 LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
@@ -53,11 +62,31 @@ LLM_SUMMARY_CHARACTERS = Histogram(
 )
 
 
-# --- STRUCTURED JSON LOGGING WITH CONTEXT ADAPTER ---
+# --- OPENTELEMETRY TRACING INITIALIZATION ---
+def setup_otel(service_name: str = "imdb-ai-worker") -> trace.Tracer:
+    """Configures OpenTelemetry TracerProvider and OTLP Exporter pointing to Alloy [1.1, 1.2.7]."""
+    try:
+        resource = Resource(attributes={"service.name": service_name})
+        provider = TracerProvider(resource=resource)
+
+        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://alloy:4317")
+        exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
+
+        provider.add_span_processor(BatchSpanProcessor(exporter))
+        trace.set_tracer_provider(provider)
+
+        logging.info(f"OpenTelemetry successfully initialized. Exporting to {otlp_endpoint}")
+        return trace.get_tracer(service_name)
+    except Exception as exc:
+        logging.warning(f"Failed to initialize OpenTelemetry. Falling back to No-Op: {exc}")
+        return trace.get_noop_tracer()
+
+
+# --- STRUCTURED JSON LOGGING WITH OTel ---
 class WorkerJsonFormatter(logging.Formatter):
     """
     Structured JSON formatter for the AI Worker.
-    Outputs logs in JSON format with standard metadata and traceID injection [1.5].
+    Outputs logs in JSON format and automatically injects active OTel trace correlation IDs [1.5].
     """
 
     def __init__(self, service_name: str = "imdb-ai-worker"):
@@ -66,9 +95,7 @@ class WorkerJsonFormatter(logging.Formatter):
 
     def format(self, record):
         log_record = {
-            "timestamp": datetime.now(UTC)
-            .isoformat(timespec="milliseconds")
-            .replace("+00:00", "Z"),
+            "timestamp": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -76,28 +103,17 @@ class WorkerJsonFormatter(logging.Formatter):
             "version": APP_VERSION,
         }
 
-        # Inject trace correlation metadata if appended via LoggerAdapter [1.5]
-        if hasattr(record, "traceID"):
-            log_record["traceID"] = record.traceID
-        if hasattr(record, "spanID"):
-            log_record["spanID"] = record.spanID
+        # Automatically extract trace correlation metadata if an active OTel span exists [1.5]
+        current_span = trace.get_current_span()
+        span_context = current_span.get_span_context() if current_span else None
+        if span_context and span_context.is_valid:
+            log_record["traceID"] = trace.format_trace_id(span_context.trace_id)
+            log_record["spanID"] = trace.format_span_id(span_context.span_id)
 
         if record.exc_info:
             log_record["exception"] = self.formatException(record.exc_info)
 
         return json.dumps(log_record)
-
-
-class TraceLoggerAdapter(logging.LoggerAdapter):
-    """
-    Logger adapter to dynamically inject trace context into log record extra fields [3].
-    """
-
-    def process(self, msg, kwargs):
-        extra = kwargs.setdefault("extra", {})
-        if self.extra:
-            extra.update(self.extra)
-        return msg, kwargs
 
 
 def setup_worker_logging(service_name: str = "imdb-ai-worker", level: str | int = logging.INFO):
@@ -111,23 +127,12 @@ def setup_worker_logging(service_name: str = "imdb-ai-worker", level: str | int 
     root_logger.setLevel(level)
 
 
-def parse_traceparent(traceparent: str) -> tuple[str | None, str | None]:
-    """
-    Safely parses W3C traceparent headers to extract traceID and spanID [1].
-    Format: version-trace_id-parent_id-trace_flags
-    Example: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
-    """
-    if not traceparent:
-        return None, None
-    parts = traceparent.split("-")
-    if len(parts) >= 3 and len(parts[1]) == 32 and len(parts[2]) == 16:
-        return parts[1], parts[2]
-    return None, None
-
-
 # Initialize JSON logging on application startup
 setup_worker_logging(service_name="imdb-ai-worker", level=os.getenv("LOG_LEVEL", "INFO"))
 LOGGER = logging.getLogger("imdb_ai_worker")
+
+# Initialize OpenTelemetry Tracer
+tracer = setup_otel(service_name="imdb-ai-worker")
 
 
 async def ensure_consumer_group(redis_client: redis.Redis) -> None:
@@ -199,9 +204,13 @@ async def main():
 
     # Connect to PostgreSQL
     db_pool = await asyncpg.create_pool(
-        user=PG_USER, password=PG_PASS, database=PG_DB, host=PG_HOST, port=5432
+        user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD,
+        database=POSTGRES_DB,
+        host=POSTGRES_HOST,
+        port=5432,
     )
-    LOGGER.info("event=postgres_connected host=%s port=%s database=%s", PG_HOST, 5432, PG_DB)
+    LOGGER.info("event=postgres_connected host=%s port=%s database=%s", POSTGRES_HOST, 5432, POSTGRES_DB)
 
     # Local LLMs can be slow, but each request still needs an upper bound.
     timeout = httpx.Timeout(LLM_TIMEOUT_SECONDS, connect=10.0)
@@ -219,8 +228,7 @@ async def main():
                 if not message:
                     AI_TASKS_PROCESSED_TOTAL.labels(status="missing_payload").inc()
                     LOGGER.warning(
-                        "event=message_missing_payload stream=%s group=%s consumer=%s "
-                        "message_id=%s field=%s",
+                        "event=message_missing_payload stream=%s group=%s consumer=%s message_id=%s field=%s",
                         STREAM_NAME,
                         CONSUMER_GROUP,
                         CONSUMER_NAME,
@@ -228,162 +236,159 @@ async def main():
                         PAYLOAD_FIELD,
                     )
                     await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
-                    LOGGER.info(
-                        "event=message_acked stream=%s group=%s message_id=%s "
-                        "reason=missing_payload",
-                        STREAM_NAME,
-                        CONSUMER_GROUP,
-                        message_id,
-                    )
                     continue
 
-                # ---> PRE-VALIDATION TRACE CONTEXT EXTRACTION <---
-                # Extract trace context early so that even validation
-                # failures contain trace IDs [1.3]
+                # --- EXTRACT TRACEPARENT FROM PAYLOAD ---
                 traceparent = None
+                sanitized_message = message
                 try:
                     raw_json = json.loads(message)
                     traceparent = raw_json.get("traceparent")
+
+                    # Sanitize the message: remove traceparent to prevent strict Pydantic validation errors [2]
+                    if "traceparent" in raw_json:
+                        del raw_json["traceparent"]
+                        sanitized_message = json.dumps(raw_json)
                 except Exception:
                     pass
 
-                trace_id, span_id = parse_traceparent(traceparent)
-                task_logger = TraceLoggerAdapter(
-                    LOGGER, {"traceID": trace_id, "spanID": span_id} if trace_id else {}
-                )
-                # ------------------------------------------------
+                # Extract parent context natively using OpenTelemetry propagator [1.1]
+                carrier = {"traceparent": traceparent} if traceparent else {}
+                parent_context = TraceContextTextMapPropagator().extract(carrier=carrier)
 
-                # ---> PYDANTIC VALIDATION <---
-                try:
-                    # Validate raw JSON against strict contract
-                    task = AITaskPayload.model_validate_json(message)
-                except ValidationError as ve:
-                    AI_TASKS_PROCESSED_TOTAL.labels(status="contract_violation").inc()
-                    task_logger.warning(
-                        "event=contract_violation stream=%s group=%s consumer=%s "
-                        "message_id=%s error=%r",
-                        STREAM_NAME,
-                        CONSUMER_GROUP,
-                        CONSUMER_NAME,
-                        message_id,
-                        ve,
-                    )
-                    await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
-                    task_logger.info(
-                        "event=message_acked stream=%s group=%s message_id=%s "
-                        "reason=contract_violation",
-                        STREAM_NAME,
-                        CONSUMER_GROUP,
-                        message_id,
-                    )
-                    continue  # Skip invalid payloads
-
-                task_logger.info(
-                    "event=task_started stream=%s group=%s consumer=%s message_id=%s "
-                    "movie_id=%s rank=%s title=%r",
-                    STREAM_NAME,
-                    CONSUMER_GROUP,
-                    CONSUMER_NAME,
-                    message_id,
-                    task.id,
-                    task.rank,
-                    task.title,
-                )
-
-                prompt = (
-                    f"Write a 1-sentence summary for the movie '{task.title}' "
-                    f"(IMDB Rating: {task.rating}). No intro, just the summary."
-                )
-                payload = {"model": LLM_MODEL, "prompt": prompt, "stream": False}
-
-                # Request LLM
-                started_at = perf_counter()
-                response = await http_client.post(LLM_URL, json=payload)
-                response.raise_for_status()
-                llm_duration_seconds = perf_counter() - started_at
-                LLM_REQUEST_DURATION_SECONDS.observe(llm_duration_seconds)
-                llm_duration_ms = round(llm_duration_seconds * 1000, 2)
-
-                summary = response.json().get("response", "").strip()
-                if not summary:
-                    raise RuntimeError("LLM returned an empty summary.")
-                LLM_SUMMARY_CHARACTERS.observe(len(summary))
-
-                # Update DB to 'completed'
-                async with db_pool.acquire() as conn:
-                    await conn.execute(
-                        "UPDATE movies SET ai_summary = $1, status = 'completed', "
-                        "updated_at = CURRENT_TIMESTAMP WHERE id = $2;",
-                        summary,
-                        task.id,
-                    )
-                await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
-                AI_TASKS_PROCESSED_TOTAL.labels(status="completed").inc()
-                task_logger.info(
-                    "event=task_completed stream=%s group=%s consumer=%s message_id=%s "
-                    "movie_id=%s rank=%s llm_duration_ms=%s summary_chars=%s",
-                    STREAM_NAME,
-                    CONSUMER_GROUP,
-                    CONSUMER_NAME,
-                    message_id,
-                    task.id,
-                    task.rank,
-                    llm_duration_ms,
-                    len(summary),
-                )
-
-            except Exception as e:
-                AI_TASKS_PROCESSED_TOTAL.labels(status="failed").inc()
-                # Determine safe fallback logger inside exception catch
-                logger_to_use = task_logger if "task_logger" in locals() else LOGGER
-                logger_to_use.exception(
-                    "event=task_failed stream=%s group=%s consumer=%s message_id=%s "
-                    "movie_id=%s error=%r",
-                    STREAM_NAME,
-                    CONSUMER_GROUP,
-                    CONSUMER_NAME,
-                    message_id,
-                    task.id if task is not None else None,
-                    e,
-                )
-
-                # ---> SAFEGUARD / SELF-HEALING <---
-                # Revert the status in the database so it's not locked forever as a 'zombie' task
-                if task is not None:
+                # Start an active span linked to the parent trace [1.3]
+                # Any logging called inside this block automatically gets traceID and spanID [1.5]
+                with tracer.start_as_current_span("ProcessAITask", context=parent_context) as span:
                     try:
-                        async with db_pool.acquire() as conn:
-                            await conn.execute(
-                                "UPDATE movies SET status = 'pending', "
-                                "updated_at = CURRENT_TIMESTAMP WHERE id = $1;",
-                                task.id,
+                        # ---> PYDANTIC VALIDATION <---
+                        try:
+                            # Validate sanitized JSON against strict contract [2]
+                            task = AITaskPayload.model_validate_json(sanitized_message)
+                        except ValidationError as ve:
+                            AI_TASKS_PROCESSED_TOTAL.labels(status="contract_violation").inc()
+                            LOGGER.warning(
+                                "event=contract_violation stream=%s group=%s consumer=%s message_id=%s error=%r",
+                                STREAM_NAME,
+                                CONSUMER_GROUP,
+                                CONSUMER_NAME,
+                                message_id,
+                                ve,
                             )
-                        logger_to_use.info(
-                            "event=task_reverted movie_id=%s rank=%s title=%r status=pending",
+                            await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
+                            continue  # Skip invalid payloads
+
+                        span.set_attribute("movie.id", task.id)
+                        span.set_attribute("movie.title", task.title)
+
+                        LOGGER.info(
+                            "event=task_started stream=%s group=%s consumer=%s \
+                                message_id=%s movie_id=%s rank=%s title=%r",
+                            STREAM_NAME,
+                            CONSUMER_GROUP,
+                            CONSUMER_NAME,
+                            message_id,
                             task.id,
                             task.rank,
                             task.title,
                         )
-                        if message_id is not None:
-                            await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
-                            logger_to_use.info(
-                                "event=message_acked stream=%s group=%s message_id=%s "
-                                "reason=task_reverted",
-                                STREAM_NAME,
-                                CONSUMER_GROUP,
-                                message_id,
+
+                        prompt = (
+                            f"Write a 1-sentence summary for the movie '{task.title}' "
+                            f"(IMDB Rating: {task.rating}). No intro, just the summary."
+                        )
+                        payload = {"model": LLM_MODEL, "prompt": prompt, "stream": False}
+
+                        # Request LLM
+                        started_at = perf_counter()
+                        response = await http_client.post(LLM_URL, json=payload)
+                        response.raise_for_status()
+                        llm_duration_seconds = perf_counter() - started_at
+                        LLM_REQUEST_DURATION_SECONDS.observe(llm_duration_seconds)
+                        llm_duration_ms = round(llm_duration_seconds * 1000, 2)
+
+                        summary = response.json().get("response", "").strip()
+                        if not summary:
+                            raise RuntimeError("LLM returned an empty summary.")
+                        LLM_SUMMARY_CHARACTERS.observe(len(summary))
+
+                        span.set_attribute("llm.duration_ms", llm_duration_ms)
+                        span.set_attribute("llm.summary_length", len(summary))
+
+                        # Update DB to 'completed'
+                        async with db_pool.acquire() as conn:
+                            await conn.execute(
+                                "UPDATE movies SET ai_summary = $1, status = 'completed', "
+                                "updated_at = CURRENT_TIMESTAMP WHERE id = $2;",
+                                summary,
+                                task.id,
                             )
-                    except Exception as db_err:
-                        logger_to_use.exception(
-                            "event=task_revert_failed movie_id=%s rank=%s error=%r",
+                        await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
+                        AI_TASKS_PROCESSED_TOTAL.labels(status="completed").inc()
+                        LOGGER.info(
+                            "event=task_completed stream=%s group=%s consumer=%s message_id=%s \
+                                movie_id=%s rank=%s llm_duration_ms=%s summary_chars=%s",
+                            STREAM_NAME,
+                            CONSUMER_GROUP,
+                            CONSUMER_NAME,
+                            message_id,
                             task.id,
                             task.rank,
-                            db_err,
+                            llm_duration_ms,
+                            len(summary),
                         )
 
-                await asyncio.sleep(5)  # Delay on error to prevent API spamming
+                    except Exception as inside_exc:
+                        # Record exception inside active span context for Tempo representation [1.3, 1.4]
+                        span.record_exception(inside_exc)
+                        span.set_status(trace.StatusCode.ERROR, str(inside_exc))
+
+                        AI_TASKS_PROCESSED_TOTAL.labels(status="failed").inc()
+                        LOGGER.exception(
+                            "event=task_failed stream=%s group=%s consumer=%s message_id=%s movie_id=%s error=%r",
+                            STREAM_NAME,
+                            CONSUMER_GROUP,
+                            CONSUMER_NAME,
+                            message_id,
+                            task.id if task is not None else None,
+                            inside_exc,
+                        )
+
+                        # ---> SAFEGUARD / SELF-HEALING <---
+                        if task is not None:
+                            try:
+                                async with db_pool.acquire() as conn:
+                                    await conn.execute(
+                                        "UPDATE movies SET status = 'pending', \
+                                            updated_at = CURRENT_TIMESTAMP WHERE id = $1;",
+                                        task.id,
+                                    )
+                                LOGGER.info(
+                                    "event=task_reverted \
+                                        movie_id=%s rank=%s title=%r status=pending",
+                                    task.id,
+                                    task.rank,
+                                    task.title,
+                                )
+                                if message_id is not None:
+                                    await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
+                            except Exception as db_err:
+                                LOGGER.exception(
+                                    "event=task_revert_failed movie_id=%s rank=%s error=%r",
+                                    task.id,
+                                    task.rank,
+                                    db_err,
+                                )
+
+                        await asyncio.sleep(5)  # Delay on error to prevent API spamming
+
+            except Exception as outer_exc:
+                # Catch-all block for errors occurring outside
+                # active task scope (e.g. Redis Stream failures)
+                AI_TASKS_PROCESSED_TOTAL.labels(status="failed").inc()
+                LOGGER.exception("event=outer_loop_failed error=%r", outer_exc)
+                await asyncio.sleep(5)
 
 
 if __name__ == "__main__":
-    # Disable buffering for Docker logs
     os.environ["PYTHONUNBUFFERED"] = "1"
     asyncio.run(main())

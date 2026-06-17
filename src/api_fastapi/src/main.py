@@ -12,6 +12,15 @@ import pandas as pd
 import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
+
+# OpenTelemetry imports
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from pydantic import BaseModel
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -21,11 +30,43 @@ from contracts import DatabaseMovie
 APP_VERSION = os.getenv("APP_VERSION", "0.0.0-dev")
 
 
+# --- OPENTELEMETRY TRACING INITIALIZATION ---
+def setup_otel(app: FastAPI, service_name: str = "imdb-api") -> trace.Tracer:
+    """Configures OpenTelemetry TracerProvider, OTLP Exporter, and instruments FastAPI [1.1]."""
+    try:
+        # Define cloud resource identifier
+        resource = Resource(attributes={"service.name": service_name})
+        provider = TracerProvider(resource=resource)
+
+        # Point to Alloy gRPC receiver inside Docker network [1.2.7]
+        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://alloy:4317")
+        exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
+
+        provider.add_span_processor(BatchSpanProcessor(exporter))
+        trace.set_tracer_provider(provider)
+
+        # Auto-instrument FastAPI routes [1.1]
+        FastAPIInstrumentor.instrument_app(app)
+
+        logging.info(f"OpenTelemetry successfully initialized. Exporting to {otlp_endpoint}")
+        return trace.get_tracer(service_name)
+    except Exception as exc:
+        logging.warning(f"Failed to initialize OpenTelemetry. Falling back to No-Op: {exc}")
+        return trace.get_noop_tracer()
+
+
+def get_traceparent() -> str:
+    """Helper to extract active OTel traceparent from current span context."""
+    carrier = {}
+    TraceContextTextMapPropagator().inject(carrier)
+    return carrier.get("traceparent", "")
+
+
 # --- STRUCTURED JSON LOGGING SETUP ---
 class ApiJsonFormatter(logging.Formatter):
     """
     Structured JSON formatter for the FastAPI API Gateway.
-    Converts logs (including Uvicorn request logs) to standard JSON format.
+    Converts logs and injects OpenTelemetry metadata if an active trace exists [1.1, 1.5].
     """
 
     def __init__(self, service_name: str = "imdb-api"):
@@ -46,7 +87,14 @@ class ApiJsonFormatter(logging.Formatter):
             "version": APP_VERSION,
         }
 
-        # Extract HTTP metadata if it's a uvicorn access log to make API requests queryable [1.1]
+        # Inject trace correlation IDs if OpenTelemetry is active [1.5]
+        current_span = trace.get_current_span()
+        span_context = current_span.get_span_context() if current_span else None
+        if span_context and span_context.is_valid:
+            log_record["traceID"] = trace.format_trace_id(span_context.trace_id)
+            log_record["spanID"] = trace.format_span_id(span_context.span_id)
+
+        # Extract HTTP metadata if it's a uvicorn access log [1.1]
         if record.name == "uvicorn.access" and len(record.args) >= 5:
             log_record["http"] = {
                 "client_address": record.args[0],
@@ -82,6 +130,7 @@ def setup_api_logging(service_name: str = "imdb-api", level: int = logging.INFO)
         logger.propagate = False  # Avoid log duplication in root logger
 
 
+# Initialize logging and log level
 RAW_LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
 LOG_LEVEL = getattr(logging, RAW_LOG_LEVEL, logging.INFO)
 setup_api_logging(service_name="imdb-api", level=LOG_LEVEL)
@@ -164,9 +213,12 @@ app = FastAPI(
         "API Gateway for accessing processed IMDB movie data, "
         "triggering AI tasks, and self-healing."
     ),
-    version=APP_VERSION,  # <--- Statically bound via runtime config
+    version=APP_VERSION,
     lifespan=lifespan,
 )
+
+# 1. Initialize OpenTelemetry after FastAPI instantiation [1.1]
+tracer = setup_otel(app, service_name="imdb-api")
 
 
 @app.get(
@@ -346,6 +398,9 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
     if not pending_movies:
         return {"message": "No pending movies found to enrich.", "queued_tasks": 0}
 
+    # Extract the current active traceparent from OpenTelemetry [1.1]
+    traceparent = get_traceparent()
+
     tasks = [
         {
             "payload": json.dumps(
@@ -354,6 +409,7 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
                     "rank": movie["rank"],
                     "title": movie["title"],
                     "rating": float(movie["rating"]),
+                    "traceparent": traceparent,  # <--- Trace context injected
                 }
             )
         }
@@ -409,21 +465,25 @@ async def trigger_scraping(chart: Literal["top", "moviemeter", "toptv", "tvmeter
     """
     logging.info(f"Using container socket: {CONTAINER_SOCKET_PATH}")
 
+    # Extract active traceparent from current span to inject into container environment [1.1]
+    traceparent = get_traceparent()
     redis_host = os.getenv("REDIS_HOST", "imdb_redis")
 
     from docker import DockerClient
 
-    # Initialize the client directly
     client = DockerClient(base_url=CONTAINER_SOCKET_PATH)
 
     client.containers.run(
-        # Standard format for images built via Docker Compose
         image="imdb-ai-pipeline-scraper:latest",
         command=[f"--chart={chart}"],
         remove=True,
         detach=True,
         network="imdb-ai-pipeline_internal_network",
-        environment={"REDIS_HOST": redis_host},
+        environment={
+            "REDIS_HOST": redis_host,
+            "SCRAPER_CHART": chart,
+            "SCRAPER_TRACEPARENT": traceparent,  # <--- Trace context injected [1.1]
+        },
     )
 
     return {"message": "Scraping triggered."}
