@@ -7,14 +7,19 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-# Add both src directory and project root to path
-SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# 1. Calculate the exact local api_fastapi/src folder and the shared monorepo /src [1]
+LOCAL_SRC = Path(__file__).resolve().parents[1] / "src"
+SHARED_SRC = Path(__file__).resolve().parents[2]  # This is /home/oleg/imdb-ai-pipeline/src [1]
 
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# 2. Reconstruct sys.path:
+# - Put local api_fastapi/src at index 0 to guarantee local main.py import [1].
+# - Put shared monorepo /src next to resolve shared "contracts" imports [1].
+# - Strip out any conflicting workspace paths to prevent collisions [1].
+sys.path = [str(LOCAL_SRC), str(SHARED_SRC)] + [
+    path
+    for path in sys.path
+    if "worker_ai" not in path and path != str(LOCAL_SRC) and path != str(SHARED_SRC)
+]
 
 
 class HTTPException(Exception):
