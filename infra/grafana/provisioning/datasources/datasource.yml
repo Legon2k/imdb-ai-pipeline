@@ -24,9 +24,9 @@ datasources:
     jsonData:
       maxLines: 1000
       derivedFields:
-        # Универсальное регулярное выражение, поддерживающее пробелы в Python и Go [1.1, 2.1]
         - datasourceUid: Tempo
           matcherRegex: '"traceID"\s*:\s*"(\w+)"'
           name: TraceID
+          url: '$${__value.raw}' 
       levelConfig:
         levelKey: "level"
