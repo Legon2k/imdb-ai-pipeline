@@ -5,20 +5,28 @@ datasources:
     type: prometheus
     access: proxy
     url: http://prometheus:9090
+    uid: Prometheus
     isDefault: true
-
-  - name: Loki
-    type: loki
-    access: proxy
-    url: http://loki:3100
-    jsonData:
-      maxLines: 1000
-      levelConfig:
-        levelKey: "level"
 
   - name: Tempo
     type: tempo
     access: proxy
     url: http://tempo:3200
+    uid: Tempo
     jsonData:
-      httpMethod: GET        
+      httpMethod: GET
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    uid: Loki
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        # Универсальное регулярное выражение, поддерживающее пробелы в Python и Go [1.1, 2.1]
+        - datasourceUid: Tempo
+          matcherRegex: '"traceID"\s*:\s*"(\w+)"'
+          name: TraceID
+      levelConfig:
+        levelKey: "level"
