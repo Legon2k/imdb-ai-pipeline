@@ -199,7 +199,7 @@ services:
     ports:
       - "3000:3000"  # Grafana UI port
     volumes:
-      - grafana_data_v4:/var/lib/grafana
+      - grafana_data:/var/lib/grafana
       # Automatically provision the Prometheus datasource
       - ./infra/grafana/provisioning/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
       # Automatically provision dashboards from JSON files in the specified directory
@@ -290,4 +290,4 @@ volumes:
   pg_data:
   redis_data:
   pgadmin_data:
-  grafana_data_v4:
+  grafana_data:
