@@ -10,26 +10,27 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    # FIXED: Increase HTTP timeout to 120 seconds to prevent Playwright download failure
+    UV_HTTP_TIMEOUT=120
 
-# --- STEP 1: Copy workspace configuration files to satisfy uv workspace checks ---
-# We copy pyproject.toml from the root and config files of required packages
+# --- STEP 1: Copy ONLY metadata to satisfy uv workspace checks ---
 COPY pyproject.toml uv.lock* ./
 COPY src/contracts/pyproject.toml ./src/contracts/
 COPY src/scraper_python/pyproject.toml ./src/scraper_python/
 
-# --- STEP 2: Copy the actual source code to allow workspace building ---
-COPY src/contracts /app/src/contracts
-COPY src/scraper_python /app/src/scraper_python
+# --- STEP 2: Dummy build to pull third-party PyPI packages (including playwright) ---
+RUN mkdir -p src/contracts/src src/scraper_python/src \
+    && touch src/contracts/src/__init__.py src/scraper_python/src/__init__.py \
+    && uv pip install --system ./src/contracts ./src/scraper_python
 
-# --- STEP 3: Install packages globally within the system ---
-# Now uv sees the full workspace context and links everything without errors
-RUN uv pip install --system ./src/contracts ./src/scraper_python
-
-# --- STEP 4: Install system dependencies and Chromium (Heavily Cached) ---
-# This layer remains frozen in the cache and won't re-download on code changes
+# --- STEP 3: Install system dependencies and Chromium (100% Locked in Cache) ---
 RUN playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
+
+# --- STEP 4: Copy the actual mutating source code ---
+COPY src/contracts /app/src/contracts
+COPY src/scraper_python /app/src/scraper_python
 
 # --- STEP 5: Finalize package linking in editable mode ---
 RUN uv pip install -e src/contracts --system \
