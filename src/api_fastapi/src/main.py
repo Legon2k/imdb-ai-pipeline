@@ -416,16 +416,20 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
 
             # Extract the current active traceparent from OpenTelemetry [1.1]
             traceparent = get_traceparent()
-            
-            tasks.append({
-                "payload": json.dumps({
-                    "id": movie["id"],
-                    "rank": movie["rank"],
-                    "title": movie["title"],
-                    "rating": float(movie["rating"]),
-                    "traceparent": traceparent # <--- Trace context injected
-                })
-            })
+
+            tasks.append(
+                {
+                    "payload": json.dumps(
+                        {
+                            "id": movie["id"],
+                            "rank": movie["rank"],
+                            "title": movie["title"],
+                            "rating": float(movie["rating"]),
+                            "traceparent": traceparent,  # <--- Trace context injected
+                        }
+                    )
+                }
+            )
 
     movie_ids = [movie["id"] for movie in pending_movies]
 
