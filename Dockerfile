@@ -88,17 +88,20 @@ WORKDIR /app
 # Copy the uv binary from the official image
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Copy project configuration files to leverage Docker layer caching
-COPY src/worker_ai_python/pyproject.toml src/worker_ai_python/uv.lock ./
+# Copy workspace configuration files to let uv resolve global dependencies
+COPY pyproject.toml uv.lock* ./
+COPY src/worker_ai_python/pyproject.toml ./src/worker_ai_python/
+COPY src/worker_ai_python/uv.lock ./src/worker_ai_python/
+COPY src/contracts/pyproject.toml ./src/contracts/
 
-# Install project dependencies into the virtual environment during build stage
-RUN uv sync --frozen
+# Sync dependencies specifically for the worker_ai project using workspace context
+RUN uv sync --project src/worker_ai_python --frozen --no-dev --no-editable
 
-# Copy the application source code and local dependencies
+# Copy the actual application source code and contracts
 COPY ./src/worker_ai_python/src ./src
 COPY ./src/contracts ./src/contracts
 
-# Add the virtual environment binaries to PATH to avoid "uv run" overhead at runtime
+# Add the active virtual environment binaries to PATH
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Execute the python script directly from the active virtual environment
