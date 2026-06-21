@@ -11,11 +11,16 @@ from imdb_top250_scraper.constants import (
 )
 from imdb_top250_scraper.logger import setup_scraper_logging
 from imdb_top250_scraper.scraper import scrape_imdb_top_250
+from imdb_top250_scraper.telemetry import (
+    initialize_trace_from_env,
+    setup_otel_scraper,
+)
 
 # Retrieve the application version from environment variables (Runtime ENV)
 APP_VERSION = os.getenv("APP_VERSION", "0.0.0-dev")
 
 LOGGER = logging.getLogger(__name__)
+tracer = None  # Will be initialized in main()
 
 
 def positive_int(value: str) -> int:
@@ -82,25 +87,47 @@ def parse_args() -> argparse.Namespace:
 
 async def main() -> None:
     """Main async entry point."""
+    global tracer
+
     args = parse_args()
 
-    # Initialize structured JSON logging using the user-provided log level
+    # 1. Initialize OpenTelemetry SDK FIRST (before any logging)
+    tracer = setup_otel_scraper(service_name="imdb-scraper")
+
+    # 2. Initialize structured JSON logging (will now inject trace context)
     setup_scraper_logging(service_name="imdb-scraper", level=args.log_level)
 
-    LOGGER.info(f"Scraping IMDb starting. Version: {APP_VERSION}.")
+    # 3. Initialize trace context from environment (BEFORE first traced logs)
+    traceparent = initialize_trace_from_env()
 
-    # Call the scraper without file output arguments
-    movies = await scrape_imdb_top_250(
-        chart=args.chart,
-        include_images=not args.no_images,
-        limit=args.limit,
-        retries=args.retries,
-        timeout_seconds=args.timeout,
-        user_agent=args.user_agent,
-        locale=args.locale,
-    )
+    # 4. Wrap entire operation in a root span so all logs are traced
+    with tracer.start_as_current_span("scraper_main_execution") as root_span:
+        root_span.set_attribute("version", APP_VERSION)
+        root_span.set_attribute("chart", args.chart)
+        root_span.set_attribute("limit", args.limit or -1)
 
-    LOGGER.info("Successfully published %s movies to Redis stream.", len(movies))
+        if traceparent:
+            LOGGER.info("Initialized trace context from SCRAPER_TRACEPARENT")
+            root_span.set_attribute("trace.inherited", True)
+        else:
+            LOGGER.info("Starting new trace for scraping operation")
+            root_span.set_attribute("trace.inherited", False)
+
+        LOGGER.info(f"Scraping IMDb starting. Version: {APP_VERSION}.")
+
+        # Call the scraper without file output arguments
+        movies = await scrape_imdb_top_250(
+            chart=args.chart,
+            include_images=not args.no_images,
+            limit=args.limit,
+            retries=args.retries,
+            timeout_seconds=args.timeout,
+            user_agent=args.user_agent,
+            locale=args.locale,
+        )
+
+        LOGGER.info("Successfully published %s movies to Redis stream.", len(movies))
+        root_span.set_attribute("result.movie_count", len(movies))
 
 
 def run() -> None:
