@@ -491,6 +491,7 @@ async def trigger_scraping(chart: Literal["top", "moviemeter", "toptv", "tvmeter
 
     client.containers.run(
         image="imdb-ai-pipeline-scraper:latest",
+        name="imdb_scraper_dynamic",
         command=[f"--chart={chart}"],
         remove=True,
         detach=True,
@@ -499,6 +500,7 @@ async def trigger_scraping(chart: Literal["top", "moviemeter", "toptv", "tvmeter
             "REDIS_HOST": redis_host,
             "SCRAPER_CHART": chart,
             "SCRAPER_TRACEPARENT": traceparent,  # <--- Trace context injected [1.1]
+            "PYTHONUNBUFFERED": "1",
         },
     )
 

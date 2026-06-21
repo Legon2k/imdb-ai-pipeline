@@ -1,24 +1,40 @@
-// 1. Discover all active containers on the local Docker daemon [1.1.5]
+// ============================================================================
+// 1. LOGS COLLECTION (Docker -> Alloy -> Loki)
+// ============================================================================
+
+// Discover all active containers on the local Docker daemon
 discovery.docker "local_containers" {
   host = "unix:///var/run/docker.sock"
 }
 
-// 2. Filter and tag containers with metadata [1.1.5]
+// Filter and tag containers with metadata (Safe for both Compose and Raw Docker)
 discovery.relabel "filter_containers" {
   targets = discovery.docker.local_containers.targets
 
+  // Step A: Always extract the clean container name
   rule {
     source_labels = ["__meta_docker_container_name"]
     target_label  = "container"
   }
 
+  // Step B: Attempt to extract the service name from Docker Compose metadata
   rule {
     source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
     target_label  = "service"
   }
+
+  // Step C: Fallback - If the 'service' label is empty (e.g., container was started 
+  // directly via Python Docker API), explicitly set it to "dynamic-scraper" 
+  // to maintain consistency and ease filtering inside Grafana dashboards.
+  rule {
+    source_labels = ["service"]
+    regex         = "^$"
+    replacement   = "dynamic-scraper"
+    target_label  = "service"
+  }
 }
 
-// 3. Scrape logs from the filtered Docker containers [1.1.5]
+// Scrape logs from the filtered Docker containers
 loki.source.docker "scrape_logs" {
   host    = "unix:///var/run/docker.sock"
   targets = discovery.relabel.filter_containers.output
@@ -27,32 +43,34 @@ loki.source.docker "scrape_logs" {
   forward_to = [loki.write.local_loki.receiver]
 }
 
-// 4. Export logs directly to our local Loki container over internal network [1.1.5, 1.2.7]
+// Export logs directly to our local Loki container over the internal network
 loki.write "local_loki" {
   endpoint {
     url = "http://loki:3100/loki/api/v1/push"
   }
 }
 
-// File: infra/alloy/config.alloy (Add at the end)
+// ============================================================================
+// 2. TRACES COLLECTION (Applications -> OTLP -> Alloy -> Tempo)
+// ============================================================================
 
-// 5. OpenTelemetry OTLP Receiver inside Alloy [1.2.7]
+// OpenTelemetry OTLP Receiver inside Alloy
 otelcol.receiver.otlp "otlp_receiver" {
   grpc {
-    endpoint = "0.0.0.0:4317" // Listen for incoming gRPC traces from your apps [1.2.7]
+    endpoint = "0.0.0.0:4317" // Listen for incoming gRPC traces from your apps
   }
   http {
-    endpoint = "0.0.0.0:4318"
+    endpoint = "0.0.0.0:4318" // Listen for incoming HTTP traces (protobuf/json)
   }
   output {
     traces = [otelcol.exporter.otlp.tempo_exporter.input]
   }
 }
 
-// 6. Export received traces directly to our local Tempo container [1.2.7]
+// Export received traces directly to our local Tempo container
 otelcol.exporter.otlp "tempo_exporter" {
   client {
-    endpoint = "tempo:4317" // Forward traces to Tempo over internal network [1.2.7]
+    endpoint = "tempo:4317" // Forward traces to Tempo over the internal network
     tls {
       insecure = true
     }
