@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+from opentelemetry import trace
 from playwright.async_api import Browser, Page, Route, async_playwright
 from playwright.async_api import Error as PlaywrightError
 
@@ -21,6 +22,7 @@ from imdb_top250_scraper.validation import validate_movies
 from .redis_publisher import RedisPublisher
 
 LOGGER = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 async def block_heavy_resources(route: Route) -> None:
@@ -44,85 +46,90 @@ async def extract_movies(
     Extracts raw movie data from the DOM and formats it according
     to the shared MoviePayload contract.
     """
-    movies = page.locator(MOVIE_SELECTOR)
+    with tracer.start_as_current_span("extract_movies") as span:
+        span.set_attribute("include_images", include_images)
+        span.set_attribute("limit", limit or -1)
 
-    raw_movies = await movies.evaluate_all(
-        """
-        items => items.map((item, index) => {
-            const titleText = item.querySelector(".ipc-title__text")?.textContent?.trim() || "";
-            
-            // Try multiple selectors for rating to improve robustness
-            let ratingText = "";
-            const ratingSpan = 
-                item.querySelector("span[aria-label*='IMDb rating']") ||
-                item.querySelector("span[aria-label*='rating']") ||
-                item.querySelector(".ratingGroup--imdb-rating span");
-            
-            if (ratingSpan) {
-                ratingText = ratingSpan.textContent?.trim() || "";
-            }
-            
-            // If still empty, try to find any span with numeric rating pattern
-            if (!ratingText) {
-                const spans = item.querySelectorAll("span");
-                for (const span of spans) {
-                    const text = span.textContent?.trim() || "";
-                    if (/^\\d+(?:\\.\\d+)?\\s*\\(/.test(text)) {
-                        ratingText = text;
-                        break;
+        movies = page.locator(MOVIE_SELECTOR)
+
+        raw_movies = await movies.evaluate_all(
+            """
+            items => items.map((item, index) => {
+                const titleText = item.querySelector(".ipc-title__text")?.textContent?.trim() || "";
+                
+                // Try multiple selectors for rating to improve robustness
+                let ratingText = "";
+                const ratingSpan = 
+                    item.querySelector("span[aria-label*='IMDb rating']") ||
+                    item.querySelector("span[aria-label*='rating']") ||
+                    item.querySelector(".ratingGroup--imdb-rating span");
+                
+                if (ratingSpan) {
+                    ratingText = ratingSpan.textContent?.trim() || "";
+                }
+                
+                // If still empty, try to find any span with numeric rating pattern
+                if (!ratingText) {
+                    const spans = item.querySelectorAll("span");
+                    for (const span of spans) {
+                        const text = span.textContent?.trim() || "";
+                        if (/^\\d+(?:\\.\\d+)?\\s*\\(/.test(text)) {
+                            ratingText = text;
+                            break;
+                        }
                     }
                 }
+                
+                const link = item.querySelector("a.ipc-title-link-wrapper")?.href || null;
+                const image = item.querySelector("img")?.src || null;
+
+                return {
+                    rank: index + 1,
+                    title: titleText.replace(/^\\d+\\.\\s*/, ""),
+                    rating_text: ratingText,
+                    imdb_url: link,
+                    image_url: image
+                };
+            })
+            """
+        )
+
+        if limit is not None:
+            raw_movies = raw_movies[:limit]
+
+        results: list[Movie] = []
+        for movie in raw_movies:
+            rating, votes, votes_count = parse_rating(movie.pop("rating_text"))
+            imdb_id = extract_imdb_id(movie.get("imdb_url"))
+
+            # Log warning if rating is 0 (new movie without rating)
+            if rating == 0.0:
+                LOGGER.warning(
+                    "Movie #%d (%s) has no rating (new movie). rating_text='%s', url='%s'",
+                    movie["rank"],
+                    movie["title"],
+                    movie.get("rating_text", ""),
+                    movie.get("imdb_url", ""),
+                )
+
+            # Map to shared MoviePayload contract - only keep required fields
+            movie_payload: Movie = {
+                "imdb_id": imdb_id,
+                "rank": movie["rank"],
+                "title": movie["title"],
+                "rating": rating,
+                "votes": votes,
             }
-            
-            const link = item.querySelector("a.ipc-title-link-wrapper")?.href || null;
-            const image = item.querySelector("img")?.src || null;
 
-            return {
-                rank: index + 1,
-                title: titleText.replace(/^\\d+\\.\\s*/, ""),
-                rating_text: ratingText,
-                imdb_url: link,
-                image_url: image
-            };
-        })
-        """
-    )
+            # Add optional image_url if requested and available
+            if include_images and movie.get("image_url"):
+                movie_payload["image_url"] = movie["image_url"]
 
-    if limit is not None:
-        raw_movies = raw_movies[:limit]
+            results.append(movie_payload)
 
-    results: list[Movie] = []
-    for movie in raw_movies:
-        rating, votes, votes_count = parse_rating(movie.pop("rating_text"))
-        imdb_id = extract_imdb_id(movie.get("imdb_url"))
-
-        # Log warning if rating is 0 (new movie without rating)
-        if rating == 0.0:
-            LOGGER.warning(
-                "Movie #%d (%s) has no rating (new movie). rating_text='%s', url='%s'",
-                movie["rank"],
-                movie["title"],
-                movie.get("rating_text", ""),
-                movie.get("imdb_url", ""),
-            )
-
-        # Map to shared MoviePayload contract - only keep required fields
-        movie_payload: Movie = {
-            "imdb_id": imdb_id,
-            "rank": movie["rank"],
-            "title": movie["title"],
-            "rating": rating,
-            "votes": votes,
-        }
-
-        # Add optional image_url if requested and available
-        if include_images and movie.get("image_url"):
-            movie_payload["image_url"] = movie["image_url"]
-
-        results.append(movie_payload)
-
-    validate_movies(results)
-    return results
+        validate_movies(results)
+        span.set_attribute("extracted_count", len(results))
+        return results
 
 
 async def scrape_imdb_top_250(
@@ -135,38 +142,45 @@ async def scrape_imdb_top_250(
     locale: str = DEFAULT_LOCALE,
 ) -> list[Movie]:
     """Entry point with retry logic for scraping IMDb."""
-    last_error: Exception | None = None
+    with tracer.start_as_current_span("scrape_imdb_top_250") as span:
+        span.set_attribute("chart", chart)
+        span.set_attribute("include_images", include_images)
+        span.set_attribute("limit", limit or -1)
+        span.set_attribute("retries", retries)
+        span.set_attribute("timeout_seconds", timeout_seconds)
 
-    search_term = f"/{chart}/"  # Will be used to identify the chart to scrape
+        last_error: Exception | None = None
 
-    chartInfo = next((i for i in IMDB_CHARTS if search_term in i.url), IMDB_CHARTS[0])
+        search_term = f"/{chart}/"  # Will be used to identify the chart to scrape
 
-    for attempt in range(1, retries + 1):
-        try:
-            LOGGER.info(
-                "Scraping %s, count: %s, attempt %s of %s",
-                chartInfo.description,
-                chartInfo.limit,
-                attempt,
-                retries,
-            )
-            return await scrape_once(
-                chartInfo,
-                include_images,
-                limit,
-                timeout_seconds,
-                user_agent,
-                locale,
-            )
-        except Exception as exc:
-            last_error = exc
-            if attempt == retries:
-                break
+        chartInfo = next((i for i in IMDB_CHARTS if search_term in i.url), IMDB_CHARTS[0])
 
-            LOGGER.warning("Scrape attempt %s failed: %s", attempt, exc)
-            await asyncio.sleep(attempt)
+        for attempt in range(1, retries + 1):
+            try:
+                LOGGER.info(
+                    "Scraping %s, count: %s, attempt %s of %s",
+                    chartInfo.description,
+                    chartInfo.limit,
+                    attempt,
+                    retries,
+                )
+                return await scrape_once(
+                    chartInfo,
+                    include_images,
+                    limit,
+                    timeout_seconds,
+                    user_agent,
+                    locale,
+                )
+            except Exception as exc:
+                last_error = exc
+                if attempt == retries:
+                    break
 
-    raise RuntimeError(f"Failed to scrape IMDb Top 250 after {retries} attempts.") from last_error
+                LOGGER.warning("Scrape attempt %s failed: %s", attempt, exc)
+                await asyncio.sleep(attempt)
+
+        raise RuntimeError(f"Failed to scrape IMDb Top 250 after {retries} attempts.") from last_error
 
 
 async def scrape_once(
@@ -178,53 +192,65 @@ async def scrape_once(
     locale: str,
 ) -> list[Movie]:
     """Single execution of the scraping logic using Playwright."""
-    browser: Browser | None = None
-    timeout_ms = timeout_seconds * 1000
+    with tracer.start_as_current_span("scrape_once") as span:
+        span.set_attribute("chart.url", chartInfo.url)
+        span.set_attribute("chart.description", chartInfo.description)
+        span.set_attribute("chart.limit", chartInfo.limit)
 
-    async with async_playwright() as p:
-        try:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(
-                locale=locale,
-                user_agent=user_agent,
-                extra_http_headers={"Accept-Language": f"{locale},{locale.split('-')[0]};q=0.9"},
-            )
-            page = await context.new_page()
-            await page.route("**/*", block_heavy_resources)
+        browser: Browser | None = None
+        timeout_ms = timeout_seconds * 1000
 
-            await page.goto(chartInfo.url, wait_until="domcontentloaded", timeout=timeout_ms)
-            await page.wait_for_selector(MOVIE_SELECTOR, timeout=timeout_ms)
-            movie_count_expression = (
-                f"() => document.querySelectorAll('{MOVIE_SELECTOR}').length >= {chartInfo.limit}"
-            )
-            await page.wait_for_function(movie_count_expression, timeout=timeout_ms)
+        async with async_playwright() as p:
+            try:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(
+                    locale=locale,
+                    user_agent=user_agent,
+                    extra_http_headers={"Accept-Language": f"{locale},{locale.split('-')[0]};q=0.9"},
+                )
+                page = await context.new_page()
+                await page.route("**/*", block_heavy_resources)
 
-            results = await extract_movies(page, include_images=include_images, limit=limit)
-            expected_count = limit or chartInfo.limit
-            if len(results) < expected_count:
-                raise RuntimeError(f"Expected {expected_count} movies, got {len(results)}.")
+                await page.goto(chartInfo.url, wait_until="domcontentloaded", timeout=timeout_ms)
+                await page.wait_for_selector(MOVIE_SELECTOR, timeout=timeout_ms)
+                movie_count_expression = (
+                    f"() => document.querySelectorAll('{MOVIE_SELECTOR}').length >= {chartInfo.limit}"
+                )
+                await page.wait_for_function(movie_count_expression, timeout=timeout_ms)
 
-            # ==========================================
-            # ENTERPRISE DATA PIPELINE: Push to Redis
-            # ==========================================
-            LOGGER.info("Successfully extracted %d movies. Pushing to Redis...", len(results))
+                results = await extract_movies(page, include_images=include_images, limit=limit)
+                expected_count = limit or chartInfo.limit
+                if len(results) < expected_count:
+                    raise RuntimeError(f"Expected {expected_count} movies, got {len(results)}.")
 
-            publisher = RedisPublisher()
-            published_count = 0
+                # ==========================================
+                # ENTERPRISE DATA PIPELINE: Push to Redis
+                # ==========================================
+                LOGGER.info("Successfully extracted %d movies. Pushing to Redis...", len(results))
 
-            for movie in results:
-                # Ensure the movie object is a dictionary before pushing
-                movie_dict = dict(movie) if not isinstance(movie, dict) else movie
-                success = publisher.publish_movie(movie_dict)
-                if success:
-                    published_count += 1
+                with tracer.start_as_current_span("publish_to_redis") as publish_span:
+                    publish_span.set_attribute("movie_count", len(results))
 
-            LOGGER.info(
-                "Successfully published %d/%d movies to Redis.", published_count, len(results)
-            )
-            # ==========================================
+                    publisher = RedisPublisher()
+                    published_count = 0
 
-            return results
-        finally:
-            if browser is not None:
-                await browser.close()
+                    for movie in results:
+                        # Ensure the movie object is a dictionary before pushing
+                        movie_dict = dict(movie) if not isinstance(movie, dict) else movie
+                        success = publisher.publish_movie(movie_dict)
+                        if success:
+                            published_count += 1
+
+                    LOGGER.info(
+                        "Successfully published %d/%d movies to Redis.",
+                        published_count,
+                        len(results),
+                    )
+                    publish_span.set_attribute("published_count", published_count)
+                # ==========================================
+
+                span.set_attribute("result_count", len(results))
+                return results
+            finally:
+                if browser is not None:
+                    await browser.close()

@@ -30,8 +30,7 @@ def validate_movies(movies: list[Movie]) -> None:
             movie_title = movie.get("title", "Unknown")
             movie_url = movie.get("imdb_url", "N/A")
             raise ValueError(
-                f"Movie #{index} ({movie_title}) failed validation: {e}\n"
-                f"URL: {movie_url}\nMovie data: {movie}"
+                f"Movie #{index} ({movie_title}) failed validation: {e}\nURL: {movie_url}\nMovie data: {movie}"
             ) from e
 
         # Additional rank validation

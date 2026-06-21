@@ -11,6 +11,9 @@ dependencies = [
     "redis==5.0.3",       # Redis client to execute XADD commands for streaming data
     "pydantic>=2.6.0",    # Data contracts to validate raw scraped data before publishing
     "imdb-contracts",     # Local workspace package with data contracts
+    "opentelemetry-api>=1.42.1",      # OpenTelemetry trace context
+    "opentelemetry-sdk>=1.42.1",      # OpenTelemetry SDK
+    "opentelemetry-exporter-otlp>=1.42.1",  # OTLP exporter for Alloy
 ]
 
 [project.scripts]
@@ -30,7 +33,7 @@ dev = [
 
 [tool.ruff]
 # Layout configuration matching your project standards
-line-length = 100
+line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]

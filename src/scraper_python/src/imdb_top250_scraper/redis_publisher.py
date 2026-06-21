@@ -50,9 +50,7 @@ class RedisPublisher:
                 maxlen=self.stream_maxlen,
                 approximate=True,
             )
-            logger.info(
-                f"Successfully published movie to stream: {movie_data.get('title', 'Unknown')}"
-            )
+            logger.info(f"Successfully published movie to stream: {movie_data.get('title', 'Unknown')}")
             return True
         except Exception as e:
             logger.error(f"Error publishing movie {movie_data.get('title', 'Unknown')}: {e}")
