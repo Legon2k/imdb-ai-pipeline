@@ -64,6 +64,8 @@ services:
       target: scraper
     env_file:
       - .env
+    environment:
+      - PYTHONUNBUFFERED=1      
     restart: "no"
     depends_on:
       redis:
