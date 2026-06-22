@@ -3,6 +3,8 @@ import asyncio
 import logging
 import os
 
+from opentelemetry import trace
+
 from imdb_top250_scraper.constants import (
     DEFAULT_LOCALE,
     DEFAULT_RETRIES,
@@ -115,19 +117,30 @@ async def main() -> None:
 
         LOGGER.info(f"Scraping IMDb starting. Version: {APP_VERSION}.")
 
-        # Call the scraper without file output arguments
-        movies = await scrape_imdb_top_250(
-            chart=args.chart,
-            include_images=not args.no_images,
-            limit=args.limit,
-            retries=args.retries,
-            timeout_seconds=args.timeout,
-            user_agent=args.user_agent,
-            locale=args.locale,
-        )
+        try:
+            # Call the scraper without file output arguments
+            movies = await scrape_imdb_top_250(
+                chart=args.chart,
+                include_images=not args.no_images,
+                limit=args.limit,
+                retries=args.retries,
+                timeout_seconds=args.timeout,
+                user_agent=args.user_agent,
+                locale=args.locale,
+            )
 
-        LOGGER.info("Successfully published %s movies to Redis stream.", len(movies))
-        root_span.set_attribute("result.movie_count", len(movies))
+            LOGGER.info("Successfully published %s movies to Redis stream.", len(movies))
+            root_span.set_attribute("result.movie_count", len(movies))
+        finally:
+            # 1. Force flush and shutdown OpenTelemetry tracer provider before exit
+            provider = trace.get_tracer_provider()
+            if hasattr(provider, "shutdown"):
+                LOGGER.info("Flushing OpenTelemetry buffers...")
+                provider.shutdown()  # This blocks exit until all traces are sent
+
+            # 2. Async hold container alive so Alloy can pull the remaining logs from the socket
+            LOGGER.info("Waiting for log collector sync...")
+            await asyncio.sleep(60)  # Safe async delay, no 'time' module dependency conflict
 
 
 def run() -> None:

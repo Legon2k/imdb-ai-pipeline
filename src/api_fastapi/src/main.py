@@ -498,7 +498,6 @@ async def trigger_scraping(chart: Literal["top", "moviemeter", "toptv", "tvmeter
         network="imdb-ai-pipeline_internal_network",
         environment={
             "REDIS_HOST": redis_host,
-            "SCRAPER_CHART": chart,
             "SCRAPER_TRACEPARENT": traceparent,  # <--- Trace context injected [1.1]
             "PYTHONUNBUFFERED": "1",
         },

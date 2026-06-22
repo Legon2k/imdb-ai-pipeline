@@ -148,7 +148,6 @@ GET /movies/scrape [API Gateway]
 |----------|--------|---------|--------|
 | `SCRAPER_TRACEPARENT` | API (set during docker.run) | Scraper CLI | W3C Trace Context header |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | docker-compose.yml | Scraper/API | `http://alloy:4317` |
-| `SCRAPER_CHART` | API Docker spawn | Scraper CLI | `top\|moviemeter\|toptv\|tvmeter` |
 
 ## Troubleshooting
 
