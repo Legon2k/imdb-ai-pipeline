@@ -16,6 +16,9 @@ from imdb_top250_scraper.constants import (
 )
 from imdb_top250_scraper.models import Movie
 from imdb_top250_scraper.parsing import extract_imdb_id, parse_rating
+from imdb_top250_scraper.telemetry import (
+    get_traceparent,
+)
 from imdb_top250_scraper.validation import validate_movies
 
 # Import our new Redis publisher
@@ -235,11 +238,18 @@ async def scrape_once(
                     published_count = 0
 
                     for movie in results:
-                        # Ensure the movie object is a dictionary before pushing
-                        movie_dict = dict(movie) if not isinstance(movie, dict) else movie
-                        success = publisher.publish_movie(movie_dict)
-                        if success:
-                            published_count += 1
+                        with tracer.start_as_current_span("publish_movie_to_redis") as child_span:
+                            child_span.set_attribute("movie.imdb_id", movie["imdb_id"])
+                            child_span.set_attribute("movie.title", movie["title"])
+
+                            # Ensure the movie object is a dictionary before pushing
+                            movie_dict = dict(movie) if not isinstance(movie, dict) else movie
+
+                            movie_dict["traceparent"] = get_traceparent()  # Add trace context for distributed tracing
+
+                            success = publisher.publish_movie(movie_dict)
+                            if success:
+                                published_count += 1
 
                     LOGGER.info(
                         "Successfully published %d/%d movies to Redis.",
