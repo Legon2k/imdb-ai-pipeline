@@ -32,12 +32,13 @@ func (r *Repository) Close() {
 // SaveMovieToDatabase matches .NET SaveMovieToDatabaseAsync behavior exactly
 func (r *Repository) SaveMovieToDatabase(ctx context.Context, movie *model.MoviePayload) error {
 	const sql = `
-		INSERT INTO movies (imdb_id, rank, title, rating, votes, image_url, status)
-		VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+		INSERT INTO movies (imdb_id, rank, title, rating, votes, image_url, traceparent, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
 		ON CONFLICT (imdb_id) DO UPDATE 
 		SET rank = EXCLUDED.rank,
 			rating = EXCLUDED.rating,
 			votes = EXCLUDED.votes,
+			traceparent = EXCLUDED.traceparent,
 			updated_at = CURRENT_TIMESTAMP;`
 
 	_, err := r.pool.Exec(ctx, sql,
@@ -47,6 +48,7 @@ func (r *Repository) SaveMovieToDatabase(ctx context.Context, movie *model.Movie
 		movie.Rating,
 		movie.Votes,
 		movie.ImageUrl,
+		movie.TraceParent,
 	)
 	if err != nil {
 		return fmt.Errorf("db upsert error: %w", err)
