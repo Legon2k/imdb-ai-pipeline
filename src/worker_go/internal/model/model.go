@@ -11,12 +11,13 @@ var imdbRegex = regexp.MustCompile(`^tt\d+$`)
 // MoviePayload is the single source of truth for movie validation.
 // Fields exactly match contracts/schemas.json#/definitions/MoviePayload
 type MoviePayload struct {
-	ImdbId   string  `json:"imdb_id"`
-	Rank     int     `json:"rank"`
-	Title    string  `json:"title"`
-	Rating   float64 `json:"rating"` // Using float64 to safely represent decimal values
-	Votes    string  `json:"votes"`
-	ImageUrl *string `json:"image_url,omitempty"`
+	ImdbId      string  `json:"imdb_id"`
+	Rank        int     `json:"rank"`
+	Title       string  `json:"title"`
+	Rating      float64 `json:"rating"` // Using float64 to safely represent decimal values
+	Votes       string  `json:"votes"`
+	ImageUrl    *string `json:"image_url,omitempty"`
+	TraceParent string  `json:"traceparent"`
 }
 
 // Validate checks internal rules matching C# MoviePayload.Validate()
