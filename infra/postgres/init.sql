@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS movies (
     ai_summary TEXT, -- For future LLM integration
     status VARCHAR(50) DEFAULT 'pending', -- pending, processing, completed, failed
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    traceparent VARCHAR(55)
 );
 
 CREATE INDEX IF NOT EXISTS idx_movies_imdb_id ON movies(imdb_id);
