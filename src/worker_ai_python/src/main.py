@@ -292,10 +292,7 @@ async def main():
                             task.title,
                         )
 
-                        prompt = (
-                            f"Write a 1-sentence summary for the movie '{task.title}' "
-                            f"(IMDB Rating: {task.rating}). No intro, just the summary."
-                        )
+                        prompt = f"Write a 1-sentence summary for the movie '{task.title}' (IMDB Rating: {task.rating}). No intro, just the summary."
                         payload = {"model": LLM_MODEL, "prompt": prompt, "stream": False}
 
                         # Request LLM
@@ -317,22 +314,20 @@ async def main():
                         # Update DB to 'completed'
                         async with db_pool.acquire() as conn:
                             await conn.execute(
-                                "UPDATE movies SET ai_summary = $1, status = 'completed', "
-                                "updated_at = CURRENT_TIMESTAMP WHERE id = $2;",
+                                "UPDATE movies SET ai_summary = $1, status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = $2;",
                                 summary,
                                 task.id,
                             )
                         await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
                         AI_TASKS_PROCESSED_TOTAL.labels(status="completed").inc()
                         LOGGER.info(
-                            "event=task_completed stream=%s group=%s consumer=%s message_id=%s \
-                                movie_id=%s rank=%s llm_duration_ms=%s summary_chars=%s",
+                            "event=task_completed stream=%s group=%s consumer=%s message_id=%s movie_id=%s title='%s' llm_duration_ms=%s summary_chars=%s",
                             STREAM_NAME,
                             CONSUMER_GROUP,
                             CONSUMER_NAME,
                             message_id,
                             task.id,
-                            task.rank,
+                            task.title,
                             llm_duration_ms,
                             len(summary),
                         )

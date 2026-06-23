@@ -71,6 +71,12 @@ def get_traceparent() -> str:
     return carrier.get("traceparent", "")
 
 
+def get_traceparent_context(traceparent: str = None) -> str:
+    """Helper to extract active OTel traceparent from current span context."""
+    carrier = {"traceparent": traceparent} if traceparent else {}
+    return TraceContextTextMapPropagator().extract(carrier)
+
+
 # --- STRUCTURED JSON LOGGING SETUP ---
 class ApiJsonFormatter(logging.Formatter):
     """
@@ -388,10 +394,10 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
 
     lock_query = """
         WITH selected AS (
-            SELECT id, rank, title, rating
+            SELECT id, rank, title, rating, traceparent
             FROM movies
             WHERE status = 'pending'
-            ORDER BY rank ASC
+            ORDER BY id ASC
             LIMIT $1
             FOR UPDATE SKIP LOCKED
         )
@@ -399,7 +405,7 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
         SET status = 'processing', updated_at = CURRENT_TIMESTAMP
         FROM selected
         WHERE m.id = selected.id
-        RETURNING m.id, m.rank, m.title, m.rating;
+        RETURNING m.id, m.rank, m.title, m.rating, m.traceparent;
     """
     async with db_pool.acquire() as connection, connection.transaction():
         pending_movies = await connection.fetch(lock_query, limit)
@@ -410,12 +416,14 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
     tasks = []
 
     for movie in pending_movies:
-        with tracer.start_as_current_span("enqueue_movie_task") as child_span:
+        # Extract the current active traceparent from OpenTelemetry [1.1]
+        ctx = get_traceparent_context(movie["traceparent"])
+
+        with tracer.start_as_current_span("enqueue_movie_task", context=ctx) as child_span:
             child_span.set_attribute("movie.id", movie["id"])
             child_span.set_attribute("movie.title", movie["title"])
 
-            # Extract the current active traceparent from OpenTelemetry [1.1]
-            traceparent = get_traceparent()
+            traceparent = get_traceparent()  # Get the traceparent for the child span
 
             tasks.append(
                 {
