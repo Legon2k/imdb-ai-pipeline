@@ -12,7 +12,7 @@ import (
 	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/config"
 	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/db"
 	rWorker "github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/redis"
-	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/telemetry" // <--- Импорт пакета телеметрии
+	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/telemetry"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
@@ -40,6 +40,24 @@ func main() {
 	// Standardize structured JSON logger with dynamic level and global metadata
 	logger := telemetry.ConfigureLogger(version, cfg.GetLogLevel())
 
+	// Graceful setup - create context early for telemetry initialization
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Initialize OpenTelemetry tracing
+	shutdownTracing, err := telemetry.ConfigureTracing(ctx, "worker-go", version)
+	if err != nil {
+		logger.Error("OpenTelemetry initialization failed", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	defer func() {
+		if err := shutdownTracing(ctx); err != nil {
+			logger.Error("failed to shutdown tracer provider", slog.String("error", err.Error()))
+		}
+	}()
+
+	logger.Info("OpenTelemetry tracing initialized")
+
 	// Register Prometheus metrics
 	prometheus.MustRegister(rWorker.MoviesProcessedTotal)
 	prometheus.MustRegister(rWorker.MessageProcessingDuration)
@@ -51,10 +69,6 @@ func main() {
 			logger.Error("metrics server stopped unexpectedly", slog.String("error", err.Error()))
 		}
 	}()
-
-	// Graceful setup
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	logger.Info("IMDB Worker started",
 		slog.String("logLevel", cfg.LogLevel),
@@ -87,8 +101,11 @@ func main() {
 
 	defer rClient.Close()
 
+	// Get tracer from OpenTelemetry
+	tracer := telemetry.GetTracer("worker-go")
+
 	// Initialize Worker
-	worker := rWorker.NewWorker(rClient, repo, cfg.StreamName, cfg.ConsumerGroup, cfg.ConsumerName, logger, cfg.IsSimulateDbSave())
+	worker := rWorker.NewWorker(rClient, repo, cfg.StreamName, cfg.ConsumerGroup, cfg.ConsumerName, logger, tracer, cfg.IsSimulateDbSave())
 	if err := worker.EnsureConsumerGroup(ctx); err != nil {
 		logger.Error("failed to verify consumer group", slog.String("error", err.Error()))
 		os.Exit(1)
