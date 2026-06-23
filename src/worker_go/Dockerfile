@@ -6,11 +6,14 @@ RUN apk add --no-cache ca-certificates tzdata git
 WORKDIR /app
 
 # Copy Go manifests from local context
-COPY go.mod go.sum ./
-RUN go mod download
+COPY go.mod ./
+RUN go mod download || true
 
-# Copy Go source code
+# Copy all source code
 COPY . .
+
+# Update dependencies to ensure go.sum is complete
+RUN go mod tidy
 
 # Compile static binary without any complex build arguments
 RUN CGO_ENABLED=0 GOOS=linux go build \

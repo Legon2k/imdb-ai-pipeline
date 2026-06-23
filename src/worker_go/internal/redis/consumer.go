@@ -12,8 +12,11 @@ import (
 
 	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/db"
 	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/model"
+	"github.com/Legon2k/imdb-ai-pipeline/src/worker_go/internal/telemetry"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const PayloadField = "payload"
@@ -44,10 +47,11 @@ type Worker struct {
 	consumerGroup  string
 	consumerName   string
 	logger         *slog.Logger
+	tracer         trace.Tracer
 	simulateDbSave bool
 }
 
-func NewWorker(rc *redis.Client, repo *db.Repository, stream, group, consumer string, logger *slog.Logger, simulateDbSave bool) *Worker {
+func NewWorker(rc *redis.Client, repo *db.Repository, stream, group, consumer string, logger *slog.Logger, tracer trace.Tracer, simulateDbSave bool) *Worker {
 	return &Worker{
 		redisClient:    rc,
 		repo:           repo,
@@ -55,6 +59,7 @@ func NewWorker(rc *redis.Client, repo *db.Repository, stream, group, consumer st
 		consumerGroup:  group,
 		consumerName:   consumer,
 		logger:         logger,
+		tracer:         tracer,
 		simulateDbSave: simulateDbSave,
 	}
 }
@@ -164,7 +169,7 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 		return w.acknowledge(ctx, entry.ID)
 	}
 
-	// --- DEFENSIVE CONTEXT PROPAGATION EXTRACTION ---
+	// --- OPENTELEMETRY CONTEXT PROPAGATION ---
 	var traceparent string
 
 	// Attempt 1: Extract from the JSON payload (populated by FastAPI /enrich)
@@ -182,6 +187,20 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 		}
 	}
 
+	// Extract OTel trace context from traceparent header and inject into context
+	ctx = telemetry.ExtractTraceContext(ctx, traceparent)
+
+	// Create main processing span for this message (child of incoming trace)
+	msgCtx, msgSpan := w.tracer.Start(ctx, "process_movie_message")
+	defer msgSpan.End()
+
+	// Set message processing span attributes
+	msgSpan.SetAttributes(
+		attribute.String("messaging.system", "redis"),
+		attribute.String("messaging.destination", w.streamName),
+		attribute.String("messaging.message_id", entry.ID),
+	)
+
 	// Instantiate a task-scoped contextual logger to encapsulate trace metadata [3]
 	taskLogger := w.logger
 	if traceparent != "" {
@@ -197,7 +216,7 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 	var movie model.MoviePayload
 	if err := json.Unmarshal([]byte(payloadStr), &movie); err != nil {
 		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
-		if taskLogger.Enabled(ctx, slog.LevelDebug) {
+		if taskLogger.Enabled(msgCtx, slog.LevelDebug) {
 			taskLogger.Debug("skipping stream entry: invalid movie payload", slog.String("message_id", entry.ID), slog.String("error", err.Error()))
 		}
 		return w.acknowledge(ctx, entry.ID)
@@ -206,15 +225,30 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 	// Validate against contract rules
 	if err := movie.Validate(); err != nil {
 		MoviesProcessedTotal.WithLabelValues("validation_error").Inc()
-		if taskLogger.Enabled(ctx, slog.LevelDebug) {
+		if taskLogger.Enabled(msgCtx, slog.LevelDebug) {
 			taskLogger.Debug("skipping stream entry: contract validation failed", slog.String("message_id", entry.ID), slog.String("error", err.Error()))
 		}
 		return w.acknowledge(ctx, entry.ID)
 	}
 
-	// SQL Write (or simulated bypass)
+	// Create a child span for database operation using OpenTelemetry
+	dbCtx, span := w.tracer.Start(msgCtx, "save_movie_to_database")
+	defer span.End()
+
+	// Set span attributes for observability
+	span.SetAttributes(
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.operation", "upsert"),
+		attribute.String("movie.imdb_id", movie.ImdbId),
+		attribute.String("movie.title", movie.Title),
+	)
+
+	// Inject the child span's traceparent for database persistence
+	movie.TraceParent = telemetry.InjectTraceContext(dbCtx)
+
+	// SQL Write (or simulated bypass) using the child span context
 	if !w.simulateDbSave {
-		if err := w.repo.SaveMovieToDatabase(ctx, &movie); err != nil {
+		if err := w.repo.SaveMovieToDatabase(dbCtx, &movie); err != nil {
 			MoviesProcessedTotal.WithLabelValues("db_error").Inc()
 			return fmt.Errorf("failed to save movie to database: %w", err)
 		}
