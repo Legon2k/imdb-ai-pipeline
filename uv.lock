@@ -827,6 +827,9 @@ version = "0.1.0"
 source = { virtual = "src/scraper_python" }
 dependencies = [
     { name = "imdb-contracts" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp" },
+    { name = "opentelemetry-sdk" },
     { name = "playwright" },
     { name = "pydantic" },
     { name = "redis" },
@@ -843,6 +846,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "imdb-contracts", editable = "src/contracts" },
+    { name = "opentelemetry-api", specifier = ">=1.42.1" },
+    { name = "opentelemetry-exporter-otlp", specifier = ">=1.42.1" },
+    { name = "opentelemetry-sdk", specifier = ">=1.42.1" },
     { name = "playwright", specifier = "==1.59.0" },
     { name = "pydantic", specifier = ">=2.6.0" },
     { name = "redis", specifier = "==5.0.3" },
