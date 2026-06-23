@@ -281,8 +281,7 @@ async def main():
                         span.set_attribute("movie.title", task.title)
 
                         LOGGER.info(
-                            "event=task_started stream=%s group=%s consumer=%s \
-                                message_id=%s movie_id=%s rank=%s title=%r",
+                            "event=task_started stream=%s group=%s consumer=%s message_id=%s movie_id=%s rank=%s title=%r",
                             STREAM_NAME,
                             CONSUMER_GROUP,
                             CONSUMER_NAME,
@@ -353,13 +352,11 @@ async def main():
                             try:
                                 async with db_pool.acquire() as conn:
                                     await conn.execute(
-                                        "UPDATE movies SET status = 'pending', \
-                                            updated_at = CURRENT_TIMESTAMP WHERE id = $1;",
+                                        "UPDATE movies SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE id = $1;",
                                         task.id,
                                     )
                                 LOGGER.info(
-                                    "event=task_reverted \
-                                        movie_id=%s rank=%s title=%r status=pending",
+                                    "event=task_reverted movie_id=%s rank=%s title=%r status=pending",
                                     task.id,
                                     task.rank,
                                     task.title,

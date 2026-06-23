@@ -170,8 +170,20 @@ class EnrichmentStreamTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_enrich_movies_locks_pending_movies_and_publishes_stream_tasks(self):
         pending_movies = [
-            {"id": 1, "rank": 1, "title": "First Movie", "rating": 9.3},
-            {"id": 2, "rank": 2, "title": "Second Movie", "rating": 9.2},
+            {
+                "id": 1,
+                "rank": 1,
+                "title": "First Movie",
+                "rating": 9.3,
+                "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            },
+            {
+                "id": 2,
+                "rank": 2,
+                "title": "Second Movie",
+                "rating": 9.2,
+                "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b8-01",
+            },
         ]
         connection = FakeConnection(pending_movies)
         redis_client = FakeRedis()
@@ -198,8 +210,20 @@ class EnrichmentStreamTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_enrich_movies_reverts_locks_when_stream_publish_fails(self):
         pending_movies = [
-            {"id": 10, "rank": 10, "title": "Locked Movie", "rating": 8.8},
-            {"id": 11, "rank": 11, "title": "Another Locked Movie", "rating": 8.7},
+            {
+                "id": 10,
+                "rank": 10,
+                "title": "Locked Movie",
+                "rating": 8.8,
+                "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            },
+            {
+                "id": 11,
+                "rank": 11,
+                "title": "Another Locked Movie",
+                "rating": 8.7,
+                "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b8-01",
+            },
         ]
         connection = FakeConnection(pending_movies)
         api_main.db_pool = FakeDbPool(connection)
