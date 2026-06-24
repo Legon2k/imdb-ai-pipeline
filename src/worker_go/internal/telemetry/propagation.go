@@ -2,6 +2,8 @@ package telemetry
 
 import (
 	"context"
+	"strconv"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -15,12 +17,55 @@ func ExtractTraceContext(ctx context.Context, traceparent string) context.Contex
 		return ctx
 	}
 
-	// Create carrier with traceparent header
+	// Split the traceparent string manually
+	parts := strings.Split(traceparent, "-")
+	if len(parts) < 4 {
+		// Fallback to default propagator if format is incomplete
+		textMapCarrier := propagation.MapCarrier{
+			"traceparent": traceparent,
+		}
+		return otel.GetTextMapPropagator().Extract(ctx, textMapCarrier)
+	}
+
+	// Extract fields
+	// version := parts[0] // currently unused
+	traceIDStr := parts[1]
+	spanIDStr := parts[2]
+	traceFlagsStr := parts[3]
+
+	if traceIDStr != "" && spanIDStr != "" {
+		traceID, err := trace.TraceIDFromHex(traceIDStr)
+		if err != nil {
+			// Log error if needed, but continue without trace context
+			return ctx
+		}
+
+		spanID, err := trace.SpanIDFromHex(spanIDStr)
+		if err != nil {
+			// Log error if needed, but continue without trace context
+			return ctx
+		}
+
+		traceFlagsVal, err := strconv.ParseUint(traceFlagsStr, 16, 8)
+		if err != nil {
+			// Log error if needed, but continue without trace context
+			return ctx
+		}
+		traceFlags := trace.TraceFlags(byte(traceFlagsVal))
+
+		parentSpanContext := trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    traceID,
+			SpanID:     spanID,
+			TraceFlags: traceFlags,
+			Remote:     true,
+		})
+		return trace.ContextWithRemoteSpanContext(ctx, parentSpanContext)
+	}
+
+	// Fallback to default propagator if manual parsing fails or is incomplete
 	textMapCarrier := propagation.MapCarrier{
 		"traceparent": traceparent,
 	}
-
-	// Use the W3C Trace Context propagator to extract context
 	return otel.GetTextMapPropagator().Extract(ctx, textMapCarrier)
 }
 
@@ -36,3 +81,4 @@ func InjectTraceContext(ctx context.Context) string {
 func GetCurrentSpanContext(ctx context.Context) trace.SpanContext {
 	return trace.SpanContextFromContext(ctx)
 }
+
