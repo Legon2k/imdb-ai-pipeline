@@ -281,13 +281,14 @@ async def main():
                         span.set_attribute("movie.title", task.title)
 
                         LOGGER.info(
-                            "event=task_started stream=%s group=%s consumer=%s message_id=%s movie_id=%s rank=%s title=%r",
+                            "event=task_started stream=%s group=%s consumer=%s message_id=%s movie_id=%s rank=%s chart=%s title=%r",
                             STREAM_NAME,
                             CONSUMER_GROUP,
                             CONSUMER_NAME,
                             message_id,
                             task.id,
                             task.rank,
+                            task.chart,
                             task.title,
                         )
 
@@ -356,18 +357,20 @@ async def main():
                                         task.id,
                                     )
                                 LOGGER.info(
-                                    "event=task_reverted movie_id=%s rank=%s title=%r status=pending",
+                                    "event=task_reverted movie_id=%s rank=%s chart=%s title=%r status=pending",
                                     task.id,
                                     task.rank,
+                                    task.chart,
                                     task.title,
                                 )
                                 if message_id is not None:
                                     await redis_client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
                             except Exception as db_err:
                                 LOGGER.exception(
-                                    "event=task_revert_failed movie_id=%s rank=%s error=%r",
+                                    "event=task_revert_failed movie_id=%s rank=%s chart=%s error=%r",
                                     task.id,
                                     task.rank,
+                                    task.chart,
                                     db_err,
                                 )
 

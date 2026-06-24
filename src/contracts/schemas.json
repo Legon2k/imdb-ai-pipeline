@@ -42,7 +42,7 @@
           "description": "URL to movie poster image (optional, can be null)"
         }
       },
-      "required": ["imdb_id", "rank", "title", "rating", "votes"],
+      "required": ["imdb_id", "rank", "chart", "title", "rating", "votes"],
       "additionalProperties": false
     },
 
@@ -57,10 +57,14 @@
           "description": "Database movie ID (internal surrogate key)"
         },
         "rank": {
-          "type": "integer",
+          "type": ["integer", "null"],
           "minimum": 1,
           "maximum": 250,
-          "description": "IMDB Top 250 ranking position"
+          "description": "IMDB Top 250 ranking position (metadata, optional)"
+        },
+        "chart": {
+          "type": ["string", "null"],
+          "description": "Chart source (e.g., 'top_250', 'top_1000') (metadata, optional)"
         },
         "title": {
           "type": "string",
@@ -75,7 +79,7 @@
           "description": "IMDB rating (0.0-10.0)"
         }
       },
-      "required": ["id", "rank", "title", "rating"],
+      "required": ["id", "title", "rating"],
       "additionalProperties": false
     },
 
@@ -92,12 +96,6 @@
           "type": "string",
           "pattern": "^tt\\d+$",
           "description": "IMDB identifier"
-        },
-        "rank": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 250,
-          "description": "IMDB Top 250 ranking"
         },
         "title": {
           "type": "string",
@@ -138,7 +136,7 @@
           "description": "Last update timestamp"
         }
       },
-      "required": ["id", "imdb_id", "rank", "title", "rating", "votes", "status", "created_at", "updated_at"],
+      "required": ["id", "imdb_id", "title", "rating", "votes", "status", "created_at", "updated_at"],
       "additionalProperties": false
     }
   }

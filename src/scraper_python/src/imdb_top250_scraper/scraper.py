@@ -42,6 +42,7 @@ async def block_heavy_resources(route: Route) -> None:
 
 async def extract_movies(
     page: Page,
+    chart_description: str,
     include_images: bool = True,
     limit: int | None = None,
 ) -> list[Movie]:
@@ -51,6 +52,7 @@ async def extract_movies(
     """
     with tracer.start_as_current_span("extract_movies") as span:
         span.set_attribute("include_images", include_images)
+        span.set_attribute("chart", chart_description)
         span.set_attribute("limit", limit or -1)
 
         movies = page.locator(MOVIE_SELECTOR)
@@ -119,6 +121,7 @@ async def extract_movies(
             movie_payload: Movie = {
                 "imdb_id": imdb_id,
                 "rank": movie["rank"],
+                "chart": chart_description,
                 "title": movie["title"],
                 "rating": rating,
                 "votes": votes,
@@ -221,7 +224,9 @@ async def scrape_once(
                 )
                 await page.wait_for_function(movie_count_expression, timeout=timeout_ms)
 
-                results = await extract_movies(page, include_images=include_images, limit=limit)
+                results = await extract_movies(
+                    page, chart_description=chartInfo.description, include_images=include_images, limit=limit
+                )
                 expected_count = limit or chartInfo.limit
                 if len(results) < expected_count:
                     raise RuntimeError(f"Expected {expected_count} movies, got {len(results)}.")

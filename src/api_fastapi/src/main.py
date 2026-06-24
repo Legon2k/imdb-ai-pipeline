@@ -37,8 +37,7 @@ def setup_otel(app: FastAPI, service_name: str = "imdb-api") -> trace.Tracer:
         # Check if the app is a mocked object (common in unit tests / mocks)
         if not hasattr(app, "build_middleware_stack"):
             logging.warning(
-                "FastAPI app instance lacks standard methods. "
-                "Skipping OTel instrumentation (Testing/Mock environment detected)."
+                "FastAPI app instance lacks standard methods. Skipping OTel instrumentation (Testing/Mock environment detected)."
             )
             # Default to standard tracer, which automatically acts as No-Op if SDK is not set up
             return trace.get_tracer(service_name)
@@ -92,9 +91,7 @@ class ApiJsonFormatter(logging.Formatter):
         message = record.getMessage()
 
         log_record = {
-            "timestamp": datetime.now(UTC)
-            .isoformat(timespec="milliseconds")
-            .replace("+00:00", "Z"),
+            "timestamp": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             "level": record.levelname,
             "logger": record.name,
             "message": message,
@@ -224,10 +221,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="IMDB AI Pipeline API",
-    description=(
-        "API Gateway for accessing processed IMDB movie data, "
-        "triggering AI tasks, and self-healing."
-    ),
+    description=("API Gateway for accessing processed IMDB movie data, triggering AI tasks, and self-healing."),
     version=APP_VERSION,
     lifespan=lifespan,
 )
@@ -260,18 +254,14 @@ async def readiness_check():
     Verifies that the API can reach its required infrastructure dependencies.
     """
     if not db_pool or not redis_client:
-        raise HTTPException(
-            status_code=503, detail="Infrastructure connections are not initialized."
-        )
+        raise HTTPException(status_code=503, detail="Infrastructure connections are not initialized.")
 
     try:
         async with db_pool.acquire() as connection:
             await connection.fetchval("SELECT 1;")
         await redis_client.ping()
     except Exception as exc:
-        raise HTTPException(
-            status_code=503, detail=f"Infrastructure dependency check failed: {exc!r}"
-        ) from exc
+        raise HTTPException(status_code=503, detail=f"Infrastructure dependency check failed: {exc!r}") from exc
 
     return {"status": "ready", "postgres": "ok", "redis": "ok"}
 
@@ -291,9 +281,9 @@ async def get_movies(limit: int = 50, offset: int = 0):
 
     query = """
         SELECT
-            id, imdb_id, rank, title, rating, votes, image_url, ai_summary,
+            id, imdb_id, title, rating, votes, image_url, ai_summary,
             status, created_at, updated_at
-        FROM movies ORDER BY rank ASC LIMIT $1 OFFSET $2;
+        FROM movies ORDER BY rating DESC, created_at ASC LIMIT $1 OFFSET $2;
     """
     async with db_pool.acquire() as connection:
         records = await connection.fetch(query, limit, offset)
@@ -310,7 +300,7 @@ async def export_movies_to_excel():
     if not db_pool:
         raise HTTPException(status_code=500, detail="Database connection is not initialized.")
 
-    query = "SELECT rank, title, rating, votes, status, ai_summary FROM movies ORDER BY rank ASC;"
+    query = "SELECT title, rating, votes, status, ai_summary FROM movies ORDER BY rating DESC, created_at ASC;"
     async with db_pool.acquire() as connection:
         records = await connection.fetch(query)
 
@@ -320,7 +310,6 @@ async def export_movies_to_excel():
     df = pd.DataFrame([dict(r) for r in records])
     df.rename(
         columns={
-            "rank": "Rank",
             "title": "Movie Title",
             "rating": "IMDB Rating",
             "votes": "Total Votes",
@@ -394,10 +383,10 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
 
     lock_query = """
         WITH selected AS (
-            SELECT id, rank, title, rating, traceparent
+            SELECT id, title, rating, traceparent
             FROM movies
             WHERE status = 'pending'
-            ORDER BY id ASC
+            ORDER BY rating DESC, created_at ASC
             LIMIT $1
             FOR UPDATE SKIP LOCKED
         )
@@ -405,7 +394,7 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
         SET status = 'processing', updated_at = CURRENT_TIMESTAMP
         FROM selected
         WHERE m.id = selected.id
-        RETURNING m.id, m.rank, m.title, m.rating, m.traceparent;
+        RETURNING m.id, m.title, m.rating, m.traceparent;
     """
     async with db_pool.acquire() as connection, connection.transaction():
         pending_movies = await connection.fetch(lock_query, limit)
@@ -430,7 +419,6 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
                     "payload": json.dumps(
                         {
                             "id": movie["id"],
-                            "rank": movie["rank"],
                             "title": movie["title"],
                             "rating": float(movie["rating"]),
                             "traceparent": traceparent,  # <--- Trace context injected

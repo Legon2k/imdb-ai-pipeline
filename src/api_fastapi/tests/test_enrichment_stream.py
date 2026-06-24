@@ -16,9 +16,7 @@ SHARED_SRC = Path(__file__).resolve().parents[2]  # This is /home/oleg/imdb-ai-p
 # - Put shared monorepo /src next to resolve shared "contracts" imports [1].
 # - Strip out any conflicting workspace paths to prevent collisions [1].
 sys.path = [str(LOCAL_SRC), str(SHARED_SRC)] + [
-    path
-    for path in sys.path
-    if "worker_ai" not in path and path != str(LOCAL_SRC) and path != str(SHARED_SRC)
+    path for path in sys.path if "worker_ai" not in path and path != str(LOCAL_SRC) and path != str(SHARED_SRC)
 ]
 
 
@@ -172,14 +170,12 @@ class EnrichmentStreamTest(unittest.IsolatedAsyncioTestCase):
         pending_movies = [
             {
                 "id": 1,
-                "rank": 1,
                 "title": "First Movie",
                 "rating": 9.3,
                 "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
             },
             {
                 "id": 2,
-                "rank": 2,
                 "title": "Second Movie",
                 "rating": 9.2,
                 "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b8-01",
@@ -212,14 +208,12 @@ class EnrichmentStreamTest(unittest.IsolatedAsyncioTestCase):
         pending_movies = [
             {
                 "id": 10,
-                "rank": 10,
                 "title": "Locked Movie",
                 "rating": 8.8,
                 "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
             },
             {
                 "id": 11,
-                "rank": 11,
                 "title": "Another Locked Movie",
                 "rating": 8.7,
                 "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b8-01",

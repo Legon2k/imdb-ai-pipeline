@@ -32,18 +32,16 @@ func (r *Repository) Close() {
 // SaveMovieToDatabase matches .NET SaveMovieToDatabaseAsync behavior exactly
 func (r *Repository) SaveMovieToDatabase(ctx context.Context, movie *model.MoviePayload) error {
 	const sql = `
-		INSERT INTO movies (imdb_id, rank, title, rating, votes, image_url, traceparent, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+		INSERT INTO movies (imdb_id, title, rating, votes, image_url, traceparent, status)
+		VALUES ($1, $2, $3, $4, $5, $6, 'pending')
 		ON CONFLICT (imdb_id) DO UPDATE 
-		SET rank = EXCLUDED.rank,
-			rating = EXCLUDED.rating,
+		SET rating = EXCLUDED.rating,
 			votes = EXCLUDED.votes,
 			traceparent = EXCLUDED.traceparent,
 			updated_at = CURRENT_TIMESTAMP;`
 
 	_, err := r.pool.Exec(ctx, sql,
 		movie.ImdbId,
-		movie.Rank,
 		movie.Title,
 		movie.Rating,
 		movie.Votes,
