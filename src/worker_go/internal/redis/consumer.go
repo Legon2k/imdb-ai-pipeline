@@ -187,6 +187,17 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 		}
 	}
 
+	// Instantiate a task-scoped contextual logger to encapsulate trace metadata [3]
+	taskLogger := w.logger
+	if traceparent != "" {
+		if traceID, spanID := parseTraceparent(traceparent); traceID != "" {
+			taskLogger = w.logger.With(
+				slog.String("traceID", traceID),
+				slog.String("spanID", spanID),
+			)
+		}
+	}	
+
 	// Extract OTel trace context from traceparent header and inject into context
 	ctx = telemetry.ExtractTraceContext(ctx, traceparent)
 
@@ -201,16 +212,7 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 		attribute.String("messaging.message_id", entry.ID),
 	)
 
-	// Instantiate a task-scoped contextual logger to encapsulate trace metadata [3]
-	taskLogger := w.logger
-	if traceparent != "" {
-		if traceID, spanID := parseTraceparent(traceparent); traceID != "" {
-			taskLogger = w.logger.With(
-				slog.String("traceID", traceID),
-				slog.String("spanID", spanID),
-			)
-		}
-	}
+
 	// ------------------------------------------------
 
 	var movie model.MoviePayload
@@ -292,4 +294,14 @@ func parseTraceparent(traceparent string) (string, string) {
 		return parts[1], parts[2]
 	}
 	return "", ""
+}
+
+// parseTraceparentFields extracts all fields from a W3C traceparent header.
+// Format: version-trace_id-parent_id-trace_flags
+func parseTraceparentFields(traceparent string) (version, traceID, spanID, traceFlags string) {
+	parts := strings.Split(traceparent, "-")
+	if len(parts) >= 4 {
+		return parts[0], parts[1], parts[2], parts[3]
+	}
+	return "", "", "", ""
 }
