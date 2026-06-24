@@ -19,6 +19,9 @@ public record MoviePayload(
     [property: JsonPropertyName("rank")]
     int Rank,
 
+    [property: JsonPropertyName("chart")]
+    string Chart,
+
     [property: JsonPropertyName("title")]
     string Title,
 
@@ -44,6 +47,9 @@ public record MoviePayload(
         if (Rank < 1 || Rank > 250)
             throw new ArgumentException($"Rank must be between 1 and 250, got {Rank}", nameof(Rank));
 
+        if (string.IsNullOrWhiteSpace(Chart))
+            throw new ArgumentException("Chart cannot be empty", nameof(Chart));
+
         if (Title.Length == 0 || Title.Length > 255)
             throw new ArgumentException($"Title length must be 1-255, got {Title.Length}", nameof(Title));
 
@@ -66,13 +72,16 @@ public record AITaskPayload(
     int Id,
 
     [property: JsonPropertyName("rank")]
-    int Rank,
+    int? Rank = null,
+
+    [property: JsonPropertyName("chart")]
+    string? Chart = null,
 
     [property: JsonPropertyName("title")]
-    string Title,
+    string Title = "",
 
     [property: JsonPropertyName("rating")]
-    decimal Rating
+    decimal Rating = 0
 )
 {
     /// <summary>
@@ -83,7 +92,7 @@ public record AITaskPayload(
         if (Id < 1)
             throw new ArgumentException($"Id must be positive, got {Id}", nameof(Id));
 
-        if (Rank < 1 || Rank > 250)
+        if (Rank.HasValue && (Rank < 1 || Rank > 250))
             throw new ArgumentException($"Rank must be between 1 and 250, got {Rank}", nameof(Rank));
 
         if (Title.Length == 0 || Title.Length > 255)
@@ -104,9 +113,6 @@ public record DatabaseMovie(
 
     [property: JsonPropertyName("imdb_id")]
     string ImdbId,
-
-    [property: JsonPropertyName("rank")]
-    int Rank,
 
     [property: JsonPropertyName("title")]
     string Title,

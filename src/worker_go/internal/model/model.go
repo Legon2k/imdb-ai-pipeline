@@ -13,6 +13,7 @@ var imdbRegex = regexp.MustCompile(`^tt\d+$`)
 type MoviePayload struct {
 	ImdbId      string  `json:"imdb_id"`
 	Rank        int     `json:"rank"`
+	Chart       string  `json:"chart"`
 	Title       string  `json:"title"`
 	Rating      float64 `json:"rating"` // Using float64 to safely represent decimal values
 	Votes       string  `json:"votes"`
@@ -28,6 +29,10 @@ func (m *MoviePayload) Validate() error {
 
 	if m.Rank < 1 || m.Rank > 250 {
 		return fmt.Errorf("rank must be between 1 and 250, got %d", m.Rank)
+	}
+
+	if strings.TrimSpace(m.Chart) == "" {
+		return fmt.Errorf("chart cannot be empty")
 	}
 
 	titleLen := len(m.Title)

@@ -33,6 +33,6 @@ def validate_movies(movies: list[Movie]) -> None:
                 f"Movie #{index} ({movie_title}) failed validation: {e}\nURL: {movie_url}\nMovie data: {movie}"
             ) from e
 
-        # Additional rank validation
-        if movie.get("rank") != index:
-            raise ValueError(f"Movie #{index} has invalid rank: {movie.get('rank')}")
+        # Additional chart validation
+        if not movie.get("chart"):
+            raise ValueError(f"Movie #{index} ({movie.get('title', 'Unknown')}) has empty chart")

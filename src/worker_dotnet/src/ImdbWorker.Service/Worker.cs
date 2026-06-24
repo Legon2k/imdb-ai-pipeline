@@ -248,13 +248,12 @@ public class Worker : BackgroundService
 
     private async Task SaveMovieToDatabaseAsync(MoviePayload movie, CancellationToken ct)
     {
-        // SQL UPSERT: Insert if not exists, otherwise update rating and rank
+        // SQL UPSERT: Insert if not exists, otherwise update rating and other fields
         const string sql = @"
-            INSERT INTO movies (imdb_id, rank, title, rating, votes, image_url, status)
-            VALUES (@ImdbId, @Rank, @Title, @Rating, @Votes, @ImageUrl, 'pending')
+            INSERT INTO movies (imdb_id, title, rating, votes, image_url, status)
+            VALUES (@ImdbId, @Title, @Rating, @Votes, @ImageUrl, 'pending')
             ON CONFLICT (imdb_id) DO UPDATE 
-            SET rank = EXCLUDED.rank,
-                rating = EXCLUDED.rating,
+            SET rating = EXCLUDED.rating,
                 votes = EXCLUDED.votes,
                 updated_at = CURRENT_TIMESTAMP;";
 

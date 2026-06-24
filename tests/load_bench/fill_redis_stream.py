@@ -73,6 +73,7 @@ def main():
     # 6. Define a realistic movie JSON payload
     movie_payload = {
         "rank": 1,
+        "chart": "top_250",
         "imdb_id": "tt0111161",
         "title": "The Shawshank Redemption",
         "rating": 9.3,

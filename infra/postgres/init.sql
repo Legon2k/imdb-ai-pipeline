@@ -3,7 +3,6 @@
 CREATE TABLE IF NOT EXISTS movies (
     id SERIAL PRIMARY KEY,
     imdb_id VARCHAR(50) UNIQUE NOT NULL,
-    rank INTEGER,
     title VARCHAR(255) NOT NULL,
     rating NUMERIC(3, 1),
     votes VARCHAR(50),

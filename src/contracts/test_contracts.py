@@ -57,6 +57,7 @@ class MoviePayloadValidationTest(unittest.TestCase):
         payload = MoviePayload(
             imdb_id="tt0111161",
             rank=1,
+            chart="top_250",
             title="The Shawshank Redemption",
             rating=9.3,
             votes="2,500,000",
@@ -69,6 +70,7 @@ class MoviePayloadValidationTest(unittest.TestCase):
         payload = MoviePayload(
             imdb_id="tt0111161",
             rank=1,
+            chart="top_250",
             title="The Shawshank Redemption",
             rating=9.3,
             votes="2,500,000",
@@ -82,6 +84,7 @@ class MoviePayloadValidationTest(unittest.TestCase):
             MoviePayload(
                 imdb_id="invalid",  # Should be tt\d+
                 rank=1,
+                chart="top_250",
                 title="Test",
                 rating=9.0,
                 votes="1000",
@@ -93,6 +96,7 @@ class MoviePayloadValidationTest(unittest.TestCase):
             MoviePayload(
                 imdb_id="tt0111161",
                 rank=251,  # Should be <= 250
+                chart="top_250",
                 title="Test",
                 rating=9.0,
                 votes="1000",
@@ -104,6 +108,7 @@ class MoviePayloadValidationTest(unittest.TestCase):
             MoviePayload(
                 imdb_id="tt0111161",
                 rank=0,  # Should be >= 1
+                chart="top_250",
                 title="Test",
                 rating=9.0,
                 votes="1000",
@@ -115,6 +120,7 @@ class MoviePayloadValidationTest(unittest.TestCase):
             MoviePayload(
                 imdb_id="tt0111161",
                 rank=1,
+                chart="top_250",
                 title="Test",
                 rating=10.1,  # Should be <= 10
                 votes="1000",
@@ -126,6 +132,7 @@ class MoviePayloadValidationTest(unittest.TestCase):
             MoviePayload(
                 imdb_id="tt0111161",
                 rank=1,
+                chart="top_250",
                 title="Test",
                 rating=-1.0,  # Should be >= 0
                 votes="1000",
@@ -137,6 +144,7 @@ class MoviePayloadValidationTest(unittest.TestCase):
             MoviePayload(
                 imdb_id="tt0111161",
                 rank=1,
+                chart="top_250",
                 title="",  # Should be min_length=1
                 rating=9.0,
                 votes="1000",
@@ -148,6 +156,7 @@ class MoviePayloadValidationTest(unittest.TestCase):
             MoviePayload(
                 imdb_id="tt0111161",
                 rank=1,
+                chart="top_250",
                 title="x" * 256,  # Should be max_length=255
                 rating=9.0,
                 votes="1000",
@@ -159,6 +168,7 @@ class MoviePayloadValidationTest(unittest.TestCase):
             MoviePayload(
                 # imdb_id missing
                 rank=1,
+                chart="top_250",
                 title="Test",
                 rating=9.0,
                 votes="1000",
@@ -170,6 +180,7 @@ class MoviePayloadValidationTest(unittest.TestCase):
             MoviePayload(
                 imdb_id="tt0111161",
                 rank=1,
+                chart="top_250",
                 title="Test",
                 rating=9.0,
                 votes="1000",
@@ -181,6 +192,7 @@ class MoviePayloadValidationTest(unittest.TestCase):
         original = MoviePayload(
             imdb_id="tt0111161",
             rank=1,
+            chart="top_250",
             title="The Shawshank Redemption",
             rating=9.3,
             votes="2,500,000",
@@ -196,7 +208,9 @@ class AITaskPayloadValidationTest(unittest.TestCase):
 
     def test_valid_ai_task_payload(self):
         """Valid AI task payload."""
-        task = AITaskPayload(id=1, rank=1, title="The Shawshank Redemption", rating=9.3)
+        task = AITaskPayload(
+            id=1, rank=1, chart="top_250", title="The Shawshank Redemption", rating=9.3
+        )
         self.assertEqual(task.id, 1)
         self.assertEqual(task.rank, 1)
 
@@ -206,6 +220,7 @@ class AITaskPayloadValidationTest(unittest.TestCase):
             AITaskPayload(
                 # id missing
                 rank=1,
+                chart="top_250",
                 title="Test",
                 rating=9.0,
             )
@@ -213,12 +228,12 @@ class AITaskPayloadValidationTest(unittest.TestCase):
     def test_invalid_id_zero(self):
         """Rejects id < 1."""
         with self.assertRaises(ValidationError):
-            AITaskPayload(id=0, rank=1, title="Test", rating=9.0)
+            AITaskPayload(id=0, rank=1, chart="top_250", title="Test", rating=9.0)
 
     def test_json_roundtrip(self):
         """JSON serialization/deserialization is lossless."""
         original = AITaskPayload(
-            id=1, rank=1, title="The Shawshank Redemption", rating=9.3
+            id=1, rank=1, chart="top_250", title="The Shawshank Redemption", rating=9.3
         )
         json_str = original.model_dump_json()
         restored = AITaskPayload.model_validate_json(json_str)
@@ -235,7 +250,6 @@ class DatabaseMovieValidationTest(unittest.TestCase):
         movie = DatabaseMovie(
             id=1,
             imdb_id="tt0111161",
-            rank=1,
             title="The Shawshank Redemption",
             rating=9.3,
             votes="2,500,000",
@@ -255,7 +269,6 @@ class DatabaseMovieValidationTest(unittest.TestCase):
         movie = DatabaseMovie(
             id=1,
             imdb_id="tt0111161",
-            rank=1,
             title="The Shawshank Redemption",
             rating=9.3,
             votes="2,500,000",
@@ -276,7 +289,6 @@ class DatabaseMovieValidationTest(unittest.TestCase):
             DatabaseMovie(
                 id=1,
                 imdb_id="tt0111161",
-                rank=1,
                 title="Test",
                 rating=9.0,
                 votes="1000",
@@ -295,7 +307,6 @@ class DatabaseMovieValidationTest(unittest.TestCase):
             movie = DatabaseMovie(
                 id=1,
                 imdb_id="tt0111161",
-                rank=1,
                 title="Test",
                 rating=9.0,
                 votes="1000",
@@ -317,6 +328,7 @@ class CrossContractConsistencyTest(unittest.TestCase):
         movie = MoviePayload(
             imdb_id="tt0111161",
             rank=1,
+            chart="top_250",
             title="The Shawshank Redemption",
             rating=9.3,
             votes="2,500,000",

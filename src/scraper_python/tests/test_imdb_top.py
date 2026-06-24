@@ -43,6 +43,7 @@ class MovieValidationTest(unittest.TestCase):
             [
                 {
                     "rank": 1,
+                    "chart": "top_250",
                     "imdb_id": "tt0111161",
                     "title": "The Shawshank Redemption",
                     "rating": 9.3,
@@ -52,11 +53,12 @@ class MovieValidationTest(unittest.TestCase):
         )
 
     def test_validate_movies_rejects_missing_required_field(self):
-        with self.assertRaisesRegex(ValueError, "imdb_id"):
+        with self.assertRaisesRegex(ValueError, "imdb_id|chart"):
             validate_movies(
                 [
                     {
                         "rank": 1,
+                        "chart": "top_250",
                         "title": "The Shawshank Redemption",
                         "rating": 9.3,
                         "votes": "3.2M",
@@ -64,12 +66,13 @@ class MovieValidationTest(unittest.TestCase):
                 ]
             )
 
-    def test_validate_movies_rejects_invalid_rank(self):
-        with self.assertRaisesRegex(ValueError, r"Extra inputs are not permitted|rank"):
+    def test_validate_movies_rejects_empty_chart(self):
+        with self.assertRaisesRegex(ValueError, "chart"):
             validate_movies(
                 [
                     {
-                        "rank": 2,
+                        "rank": 1,
+                        "chart": "",
                         "imdb_id": "tt0111161",
                         "title": "The Shawshank Redemption",
                         "rating": 9.3,

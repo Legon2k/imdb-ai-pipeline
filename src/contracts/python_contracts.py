@@ -31,6 +31,7 @@ class MoviePayload(BaseModel):
         ..., pattern=r"^tt\d+$", description="IMDB identifier (e.g., 'tt0111161')"
     )
     rank: int = Field(..., ge=1, le=250, description="IMDB Top 250 ranking position")
+    chart: str = Field(..., description="Chart source (e.g., 'top_250', 'top_1000')")
     title: str = Field(..., min_length=1, max_length=255, description="Movie title")
     rating: float = Field(..., ge=0, le=10, description="IMDB rating (0.0-10.0)")
     votes: str = Field(
@@ -44,6 +45,7 @@ class MoviePayload(BaseModel):
             "example": {
                 "imdb_id": "tt0111161",
                 "rank": 1,
+                "chart": "top_250",
                 "title": "The Shawshank Redemption",
                 "rating": 9.3,
                 "votes": "2,500,000",
@@ -66,7 +68,12 @@ class AITaskPayload(BaseModel):
     """
 
     id: int = Field(..., ge=1, description="Database movie ID (internal surrogate key)")
-    rank: int = Field(..., ge=1, le=250, description="IMDB Top 250 ranking position")
+    rank: Optional[int] = Field(
+        None, ge=1, le=250, description="IMDB Top 250 ranking position (metadata)"
+    )
+    chart: Optional[str] = Field(
+        None, description="Chart source (e.g., 'top_250', 'top_1000') (metadata)"
+    )
     title: str = Field(..., min_length=1, max_length=255, description="Movie title")
     rating: float = Field(..., ge=0, le=10, description="IMDB rating (0.0-10.0)")
 
@@ -76,6 +83,7 @@ class AITaskPayload(BaseModel):
             "example": {
                 "id": 1,
                 "rank": 1,
+                "chart": "top_250",
                 "title": "The Shawshank Redemption",
                 "rating": 9.3,
             }
@@ -95,7 +103,6 @@ class DatabaseMovie(BaseModel):
 
     id: int = Field(..., description="Primary key")
     imdb_id: str = Field(..., description="IMDB identifier")
-    rank: int = Field(..., ge=1, le=250, description="IMDB Top 250 ranking")
     title: str = Field(..., max_length=255, description="Movie title")
     rating: float = Field(..., ge=0, le=10, description="IMDB rating")
     votes: str = Field(..., description="Number of votes")
@@ -113,7 +120,6 @@ class DatabaseMovie(BaseModel):
             "example": {
                 "id": 1,
                 "imdb_id": "tt0111161",
-                "rank": 1,
                 "title": "The Shawshank Redemption",
                 "rating": 9.3,
                 "votes": "2,500,000",
@@ -137,6 +143,7 @@ try:
 
         imdb_id: str
         rank: int
+        chart: str
         title: str
         rating: float
         votes: str
@@ -147,6 +154,7 @@ try:
 
         id: int
         rank: int
+        chart: str
         title: str
         rating: float
 
