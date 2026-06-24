@@ -201,8 +201,31 @@ func (w *Worker) processEntry(ctx context.Context, entry redis.XMessage, msgCoun
 	// Extract OTel trace context from traceparent header and inject into context
 	ctx = telemetry.ExtractTraceContext(ctx, traceparent)
 
-	// Create main processing span for this message (child of incoming trace)
-	msgCtx, msgSpan := w.tracer.Start(ctx, "process_movie_message")
+	// Capture the extracted span context to use as a Link
+	parentSpanContext := trace.SpanContextFromContext(ctx)
+	
+	// Log trace context extraction result at INFO level for visibility
+	w.logger.Info("trace context extraction result",
+		slog.String("traceparent_input", traceparent),
+		slog.String("extracted_traceID", parentSpanContext.TraceID().String()),
+		slog.String("extracted_spanID", parentSpanContext.SpanID().String()),
+		slog.Bool("is_valid", parentSpanContext.IsValid()),
+		slog.Bool("is_remote", parentSpanContext.IsRemote()),
+	)
+	
+	// Create main processing span for this message as a new root span, linking to the incoming trace
+	var msgCtx context.Context
+	var msgSpan trace.Span
+	if parentSpanContext.IsValid() {
+		msgCtx, msgSpan = w.tracer.Start(context.Background(), "process_movie_message", trace.WithLinks(trace.Link{SpanContext: parentSpanContext}))
+		w.logger.Info("created root span with link to upstream trace",
+			slog.String("root_span_traceID", trace.SpanContextFromContext(msgCtx).TraceID().String()),
+			slog.String("linked_traceID", parentSpanContext.TraceID().String()),
+		)
+	} else {
+		msgCtx, msgSpan = w.tracer.Start(context.Background(), "process_movie_message")
+		w.logger.Info("created root span without link (no valid traceparent)")
+	}
 	defer msgSpan.End()
 
 	// Set message processing span attributes
