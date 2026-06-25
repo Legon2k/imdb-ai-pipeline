@@ -411,22 +411,23 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
         scraper_traceparent = movie["traceparent"]
         if scraper_traceparent:
             try:
-                scraper_ctx = get_traceparent_context(scraper_traceparent)
-                if scraper_ctx:
-                    scraper_span_ctx = trace.get_current_span().get_span_context()
-                    # Create link to scraper trace
-                    # Extract trace context from the carrier (scraper traceparent)
-                    scraper_span_ctx = None
-                    parts = scraper_traceparent.split("-")
-                    if len(parts) == 4:
-                        from opentelemetry.trace import SpanContext, TraceFlags
+                # Parse W3C traceparent format: version-trace_id-parent_id-flags
+                # e.g., "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+                parts = scraper_traceparent.split("-")
+                if len(parts) == 4:
+                    from opentelemetry.trace import SpanContext, TraceFlags
 
-                        trace_id = int(parts[1], 16)  # Parse hex to int
-                        span_id = int(parts[2], 16)
-                        trace_flags = TraceFlags(int(parts[3], 16))
-                        scraper_span_ctx = SpanContext(trace_id, span_id, trace_flags=trace_flags, is_remote=True)
-                        if scraper_span_ctx and scraper_span_ctx.is_valid:
-                            links.append(Link(scraper_span_ctx))
+                    trace_id = int(parts[1], 16)
+                    span_id = int(parts[2], 16)
+                    trace_flags = TraceFlags(int(parts[3], 16))
+                    scraper_span_ctx = SpanContext(
+                        trace_id=trace_id,
+                        span_id=span_id,
+                        is_remote=True,
+                        trace_flags=trace_flags,
+                    )
+                    if scraper_span_ctx.is_valid:
+                        links.append(Link(scraper_span_ctx))
             except (ValueError, IndexError):
                 pass
 
