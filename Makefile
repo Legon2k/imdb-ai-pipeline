@@ -82,4 +82,4 @@ load-bench-fill:
 
 load-bench-clean:
 	@echo "Cleaning Redis stream..."
-	podman exec -it imdb_redis redis-cli XTRIM movies_stream MAXLEN 0	
+	$(CONTAINER_ENGINE) exec -it imdb_redis redis-cli XTRIM movies_stream MAXLEN 0

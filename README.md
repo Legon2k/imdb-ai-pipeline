@@ -1,10 +1,10 @@
 # IMDB AI Pipeline: Enterprise Data Extraction & Enrichment
 
-A high-performance, distributed data pipeline. It scrapes the IMDb Top 250 chart using asynchronous Playwright, streams the data into a Redis message broker, processes it asynchronously using concurrent workers, and uses a decoupled Python AI Worker to enrich data via Local LLMs (Ollama), all orchestrated by a FastAPI gateway.
+A high-performance, distributed data pipeline. It scrapes IMDb charts using asynchronous Playwright, streams the data into Redis, persists normalized movie records with the Go worker, and uses a decoupled Python AI worker to enrich data via Local LLMs (Ollama), all orchestrated by a FastAPI gateway and Docker Compose.
 
 ## 🏗️ Architecture Overview
 
-This project implements a fully decoupled Event-Driven ETL (Extract, Transform, Load) architecture with isolated Redis Streams, consumer groups, strict Pydantic Data Contracts, and Self-Healing capabilities. It is currently in a migration/coexistence state: the legacy .NET 10 Worker remains the reference ingestion service, while `worker_go` has been added as the Go-based transit implementation that will be tested side by side before the final cutover.
+This project implements a fully decoupled Event-Driven ETL (Extract, Transform, Load) architecture with isolated Redis Streams, consumer groups, strict data contracts, structured JSON logging, and end-to-end OpenTelemetry tracing. The runtime stack has migrated back to Docker: `docker compose` is the default orchestration path, while the legacy .NET worker is kept behind the `manual` profile as a rollback and benchmark reference.
 
 ```mermaid
 graph TD
@@ -13,8 +13,8 @@ graph TD
     IMDB[IMDB Website]
     Scraper(Python + Playwright<br/>Data Producer)
     RedisMovies[(Redis Stream<br/>'movies_stream')]
-    WorkerNET(.NET 10 Worker<br/>Legacy Consumer)
-    WorkerGo(Go Movie Worker<br/>Migration Target)
+    WorkerGo(Go Movie Worker<br/>Default Consumer)
+    WorkerNET(.NET 10 Worker<br/>Manual Profile)
     DB[(PostgreSQL<br/>Persistent Storage)]
     API(FastAPI<br/>API Gateway)
     RedisAI[(Redis Stream<br/>'ai_stream')]
@@ -22,14 +22,17 @@ graph TD
     LLM{{Local LLM<br/>Ollama / Gemma}}
     Prometheus(Prometheus<br/>Metrics Scraper)
     Grafana(Grafana<br/>Provisioned Dashboards)
+    Alloy(Grafana Alloy<br/>Logs + OTLP)
+    Loki(Loki<br/>JSON Logs)
+    Tempo(Tempo<br/>Traces)
 
     %% Define Flow
     IMDB -- 1. Scrape DOM --> Scraper
     Scraper -- 2. XADD payload --> RedisMovies
-    RedisMovies -- 3. XREADGROUP --> WorkerNET
     RedisMovies -- 3. XREADGROUP --> WorkerGo
-    WorkerNET -- 4. Upsert + XACK --> DB
+    RedisMovies -. manual profile .-> WorkerNET
     WorkerGo -- 4. Upsert + XACK --> DB
+    WorkerNET -. rollback upsert .-> DB
     
     Client -- 5. Trigger Enrichment --> API
     API -- 6. Lock Pending<br/>SKIP LOCKED --> DB
@@ -42,6 +45,14 @@ graph TD
     WorkerGo -. /metrics .-> Prometheus
     WorkerAI -. /metrics .-> Prometheus
     Prometheus -. datasource .-> Grafana
+    API -. OTLP traces .-> Alloy
+    Scraper -. OTLP traces .-> Alloy
+    WorkerGo -. OTLP traces .-> Alloy
+    WorkerAI -. OTLP traces .-> Alloy
+    Alloy -. logs .-> Loki
+    Alloy -. traces .-> Tempo
+    Loki -. datasource .-> Grafana
+    Tempo -. datasource .-> Grafana
     
     Client -- 13. Download .xlsx --> API
 
@@ -57,24 +68,45 @@ graph TD
     style LLM fill:#f4a261,stroke:#fff,stroke-width:2px,color:#000
     style Prometheus fill:#e6522c,stroke:#fff,stroke-width:2px,color:#fff
     style Grafana fill:#f46800,stroke:#fff,stroke-width:2px,color:#fff
+    style Alloy fill:#7c3aed,stroke:#fff,stroke-width:2px,color:#fff
+    style Loki fill:#4f46e5,stroke:#fff,stroke-width:2px,color:#fff
+    style Tempo fill:#2563eb,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-## Observability and Metrics
+## Runtime
 
-The Compose stack includes a monitoring profile with Prometheus and Grafana. Prometheus
-scrapes application metrics from the high-throughput workers, while Grafana publishes a
-ready-made dashboard from repository-managed provisioning files.
-
-Start the monitoring services together with the pipeline:
+Copy `.env.example` to `.env`, adjust credentials and Ollama settings, then start the stack:
 
 ```bash
-docker compose --profile monitoring up -d
+docker compose up -d
 ```
 
-Monitoring endpoints:
+Useful commands:
+
+```bash
+docker compose ps
+docker compose logs -f api worker_go worker_ai
+docker compose run --rm scraper
+docker compose --profile manual up -d worker
+```
+
+The default ingestion path is `scraper -> movies_stream -> worker_go -> PostgreSQL`.
+The legacy `.NET` worker is no longer part of the default runtime and starts only with the
+`manual` profile.
+
+## Observability
+
+The Compose stack includes Prometheus, Grafana, Loki, Tempo, and Grafana Alloy. Prometheus
+scrapes worker metrics, Alloy collects Docker JSON logs and receives OTLP traces, Loki stores
+logs, Tempo stores traces, and Grafana provisions all datasources from repository-managed files.
+
+Local endpoints:
 
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000`
+- Loki: `http://localhost:3100`
+- Tempo: `http://localhost:3200`
+- Alloy UI: `http://localhost:12345`
 
 Prometheus runs as the `prometheus` service and uses
 `infra/prometheus/prometheus.yml` as its scrape configuration. It collects metrics from:
@@ -97,21 +129,43 @@ provisioned as infrastructure as code:
 - Datasource: `infra/grafana/provisioning/datasources/datasource.yml`
 - Dashboard provider: `infra/grafana/provisioning/dashboards/dashboard.yml`
 - Ready-made panels: `infra/grafana/provisioning/dashboards/imdb_pipeline.json`
+- Alloy pipeline: `infra/alloy/config.alloy`
+- Tempo config: `infra/tempo/tempo.yaml`
+
+Application services emit structured JSON logs with OpenTelemetry correlation fields
+(`traceID`, `spanID`) when a span is active. Grafana's Loki datasource is configured with a
+derived `TraceID` field that links logs to Tempo traces.
+
+The traced flow covers the request path from `POST /movies/scrape?chart=...` in the API,
+through the scraper container, movie publication to Redis, Go worker persistence,
+`POST /movies/enrich` task fan-out, and AI worker LLM enrichment. Scraped movie records store the W3C
+`traceparent` in PostgreSQL so enrichment traces can be linked back to the original scraping
+trace.
 
 The provisioned `IMDB AI PIPELINE` dashboard includes panels for average Ollama latency,
-average summary length, Go ingestion rate, and AI task processing rate.
+average summary length, Go ingestion rate, AI task processing rate, logs, and traces.
+
+## Data Contracts and Persistence
+
+Movie ingestion payloads include:
+
+- `imdb_id`, `title`, `rating`, `votes`, `image_url`
+- `rank` and `chart` as transport metadata
+- `traceparent` for distributed tracing
+
+PostgreSQL persists the normalized movie fields and trace context. `rank` is intentionally no
+longer stored in the `movies` table; `rank` and `chart` remain in the transport models so they
+can be persisted later without breaking service contracts.
 
 ## Worker Migration: .NET to Go
 
-The movie ingestion layer is intentionally running in a transition mode according to [ADR-001](docs/adr/001-migration-from-dotnet-to-go-worker.md). The `worker_go` service was created as a transit implementation for moving ingestion from the legacy `.NET` worker to Go. For now it runs in parallel with the existing `.NET` service so both implementations can be validated before the final cutover.
+The movie ingestion layer has moved to Go according to [ADR-001](docs/adr/001-migration-from-dotnet-to-go-worker.md). `worker_go` is the default service in Docker Compose and persists movies into PostgreSQL. The legacy `.NET` worker remains available for manual comparison and rollback experiments.
 
-- `src/worker_dotnet` / `worker`: current .NET 10 Worker and baseline implementation.
-- `src/worker_go` / `worker_go`: Golang Worker added for transit and future replacement of the .NET service.
-- Both workers consume `movies_stream` through Redis consumer groups and persist normalized movie data into PostgreSQL.
-- Prometheus and Grafana metrics are used to compare runtime behavior, ingestion rate, and operational stability during the parallel run.
-- Prometheus and Grafana metrics are used to compare runtime behavior, ingestion rate, and operational stability during the parallel run.
+- `src/worker_go` / `worker_go`: default Go ingestion worker.
+- `src/worker_dotnet` / `worker`: legacy .NET 10 worker, disabled by default through the `manual` Compose profile.
+- Both workers understand `movies_stream`, but only `worker_go` runs in the default stack.
+- Prometheus, Grafana, Loki, and Tempo are used to compare runtime behavior, ingestion rate, operational stability, logs, and traces.
 - Comparative load testing of both services has been successfully executed, with Go demonstrating a 2.2x throughput gain and a 5.3x memory footprint reduction (see [Migration Benchmarks](#-migration-benchmarks--finops-analysis-net-vs-go) below).
-- After the test results are accepted, the pipeline will be switched fully to `worker_go`; the .NET worker can then be removed or kept only as a rollback reference.
 
 The rationale, alternatives, and expected operational impact are documented in ADR-001.
 
