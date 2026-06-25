@@ -17,7 +17,7 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from opentelemetry.trace import Link
 from prometheus_client import Counter, Histogram, start_http_server
 from pydantic import ValidationError
 from redis.exceptions import ResponseError
@@ -252,13 +252,31 @@ async def main():
                 except Exception:
                     pass
 
-                # Extract parent context natively using OpenTelemetry propagator [1.1]
-                carrier = {"traceparent": traceparent} if traceparent else {}
-                parent_context = TraceContextTextMapPropagator().extract(carrier=carrier)
+                # Extract parent trace info and create link (not use as parent context) [1.1, 1.3]
+                links = []
+                if traceparent:
+                    try:
+                        parts = traceparent.split("-")
+                        if len(parts) == 4:
+                            from opentelemetry.trace import SpanContext, TraceFlags
 
-                # Start an active span linked to the parent trace [1.3]
+                            trace_id = int(parts[1], 16)
+                            span_id = int(parts[2], 16)
+                            trace_flags = TraceFlags(int(parts[3], 16))
+                            api_span_ctx = SpanContext(
+                                trace_id=trace_id,
+                                span_id=span_id,
+                                is_remote=True,
+                                trace_flags=trace_flags,
+                            )
+                            if api_span_ctx.is_valid:
+                                links.append(Link(api_span_ctx))
+                    except (ValueError, IndexError):
+                        pass
+
+                # Start new trace with link to API trace (not as child) [1.3]
                 # Any logging called inside this block automatically gets traceID and spanID [1.5]
-                with tracer.start_as_current_span("ProcessAITask", context=parent_context) as span:
+                with tracer.start_as_current_span("ProcessAITask", links=links) as span:
                     try:
                         # ---> PYDANTIC VALIDATION <---
                         try:
