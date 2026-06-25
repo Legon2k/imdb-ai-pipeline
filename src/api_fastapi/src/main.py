@@ -20,6 +20,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import Link
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from pydantic import BaseModel
 
@@ -70,8 +71,8 @@ def get_traceparent() -> str:
     return carrier.get("traceparent", "")
 
 
-def get_traceparent_context(traceparent: str = None) -> str:
-    """Helper to extract active OTel traceparent from current span context."""
+def get_traceparent_context(traceparent: str = None):
+    """Helper to extract Context from OTel traceparent string."""
     carrier = {"traceparent": traceparent} if traceparent else {}
     return TraceContextTextMapPropagator().extract(carrier)
 
@@ -405,22 +406,34 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
     tasks = []
 
     for movie in pending_movies:
-        # Create child span in current API trace (not new trace) [1.1]
-        with tracer.start_as_current_span("enqueue_movie_task") as child_span:
-            child_span.set_attribute("movie.id", movie["id"])
-            child_span.set_attribute("movie.title", movie["title"])
-
-            # Store scraper trace info as attribute (metadata, not context) [1.1]
-            # Parse W3C traceparent format: version-trace_id-parent_id-flags
-            scraper_traceparent = movie["traceparent"]
-            if scraper_traceparent:
-                try:
+        # Link to scraper trace if available [1.1]
+        links = []
+        scraper_traceparent = movie["traceparent"]
+        if scraper_traceparent:
+            try:
+                scraper_ctx = get_traceparent_context(scraper_traceparent)
+                if scraper_ctx:
+                    scraper_span_ctx = trace.get_current_span().get_span_context()
+                    # Create link to scraper trace
+                    # Extract trace context from the carrier (scraper traceparent)
+                    scraper_span_ctx = None
                     parts = scraper_traceparent.split("-")
                     if len(parts) == 4:
-                        trace_id_hex = parts[1]
-                        child_span.set_attribute("scraper.trace_id", trace_id_hex)
-                except (ValueError, IndexError):
-                    pass
+                        from opentelemetry.trace import SpanContext, TraceFlags
+
+                        trace_id = int(parts[1], 16)  # Parse hex to int
+                        span_id = int(parts[2], 16)
+                        trace_flags = TraceFlags(int(parts[3], 16))
+                        scraper_span_ctx = SpanContext(trace_id, span_id, trace_flags=trace_flags, is_remote=True)
+                        if scraper_span_ctx and scraper_span_ctx.is_valid:
+                            links.append(Link(scraper_span_ctx))
+            except (ValueError, IndexError):
+                pass
+
+        # Create child span in current API trace with link to scraper trace [1.1]
+        with tracer.start_as_current_span("enqueue_movie_task", links=links) as child_span:
+            child_span.set_attribute("movie.id", movie["id"])
+            child_span.set_attribute("movie.title", movie["title"])
 
             # Get NEW traceparent for AI worker (in current API trace) [1.1]
             traceparent = get_traceparent()
