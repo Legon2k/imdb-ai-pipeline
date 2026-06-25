@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-06-25
+### Runtime & Infrastructure
+- **Changed:** Migrated the runtime stack back from Podman-oriented usage to Docker and Docker Compose as the default orchestration path.
+- **Changed:** Updated Docker build/runtime flow for the root multi-stage image, FastAPI API, Python scraper, Python AI worker, and Go worker.
+- **Changed:** Legacy `.NET` ingestion worker is no longer part of the default runtime path and remains available through the manual Compose profile as a rollback and benchmark reference.
+- **Fixed:** Updated utility commands and environment hints to use Docker-compatible defaults.
+
+### Observability & Tracing
+- **Added:** Grafana Alloy service for Docker log collection and OTLP trace ingestion.
+- **Added:** Loki service for structured JSON log storage.
+- **Added:** Tempo service for distributed trace storage.
+- **Changed:** Grafana provisioning now includes Prometheus, Loki, and Tempo datasources with trace links from Loki log records.
+- **Changed:** Application logging now emits structured JSON with OpenTelemetry correlation fields such as `traceID` and `spanID`.
+
+### Distributed Trace Flow
+- **Added:** OpenTelemetry tracing across the scraping and enrichment path: FastAPI scrape request, dynamic scraper container, Redis movie publication, Go worker persistence, API enrichment fan-out, and AI worker LLM processing.
+- **Added:** Trace context propagation through Redis payloads and PostgreSQL via W3C `traceparent`.
+- **Added:** Linked-span behavior so enrichment traces can be correlated back to the original scraping trace.
+
+### Data Contracts & Persistence
+- **Added:** `chart` metadata to movie transfer models for scraped chart source tracking.
+- **Changed:** `rank` and `chart` remain in transport contracts for future persistence use.
+- **Removed:** `rank` persistence from the PostgreSQL `movies` table and worker database save path.
+- **Changed:** Contract tests and generated schemas were updated for the revised movie and AI task payloads.
+
+### Scraper
+- **Added:** Support for selecting IMDb chart targets such as `top`, `moviemeter`, `toptv`, and `tvmeter`.
+- **Added:** Scraper telemetry helpers and integration documentation for trace propagation.
+- **Changed:** Scraper Redis publication now carries trace context with movie messages.
+
 ## [0.7.0] - 2026-06-08
 ### Worker Migration
 - **Added:** New `worker_go` service as the Go-based migration target for replacing the legacy `.NET` `worker`.
