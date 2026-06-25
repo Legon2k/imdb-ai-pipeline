@@ -405,14 +405,25 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
     tasks = []
 
     for movie in pending_movies:
-        # Extract the current active traceparent from OpenTelemetry [1.1]
-        ctx = get_traceparent_context(movie["traceparent"])
-
-        with tracer.start_as_current_span("enqueue_movie_task", context=ctx) as child_span:
+        # Create child span in current API trace (not new trace) [1.1]
+        with tracer.start_as_current_span("enqueue_movie_task") as child_span:
             child_span.set_attribute("movie.id", movie["id"])
             child_span.set_attribute("movie.title", movie["title"])
 
-            traceparent = get_traceparent()  # Get the traceparent for the child span
+            # Store scraper trace info as attribute (metadata, not context) [1.1]
+            # Parse W3C traceparent format: version-trace_id-parent_id-flags
+            scraper_traceparent = movie["traceparent"]
+            if scraper_traceparent:
+                try:
+                    parts = scraper_traceparent.split("-")
+                    if len(parts) == 4:
+                        trace_id_hex = parts[1]
+                        child_span.set_attribute("scraper.trace_id", trace_id_hex)
+                except (ValueError, IndexError):
+                    pass
+
+            # Get NEW traceparent for AI worker (in current API trace) [1.1]
+            traceparent = get_traceparent()
 
             tasks.append(
                 {
@@ -421,7 +432,7 @@ async def enrich_movies(limit: int = Query(default=5, ge=1, le=250)):
                             "id": movie["id"],
                             "title": movie["title"],
                             "rating": float(movie["rating"]),
-                            "traceparent": traceparent,  # <--- Trace context injected
+                            "traceparent": traceparent,  # <--- Trace context for AI worker
                         }
                     )
                 }
