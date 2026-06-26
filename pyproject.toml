@@ -1,13 +1,13 @@
-[tool.uv]
-# Define a workspace containing all local packages
-workspace.members = [
+# Define the workspace members using standard table header
+[tool.uv.workspace]
+members = [
     "src/contracts",
     "src/scraper_python",
     "src/api_fastapi",
     "src/worker_ai_python",
 ]
 
-# This is a workspace root, not a package itself
+# Root project metadata
 [project]
 name = "imdb-ai-pipeline"
 version = "0.1.0"

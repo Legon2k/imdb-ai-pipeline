@@ -5,6 +5,7 @@ description = "FastAPI service for IMDb AI pipeline - serves movie data and enri
 requires-python = ">=3.11"
 
 dependencies = [
+    "imdb-contracts", # Must match the exact package name of your contracts
     "fastapi==0.111.0",
     "uvicorn==0.29.0",
     "asyncpg>=0.30.0",     # Blazing fast async PostgreSQL driver
@@ -19,6 +20,9 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.42.1",
     "opentelemetry-instrumentation-fastapi>=0.63b1",
 ]
+
+[tool.uv.sources]
+imdb-contracts = { workspace = true }
 
 [dependency-groups]
 dev = [
