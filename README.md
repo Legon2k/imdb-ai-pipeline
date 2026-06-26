@@ -114,6 +114,9 @@ Prometheus runs as the `prometheus` service and uses
 - Python AI Worker: `http://localhost:8001/metrics`
 - Go Movie Worker: `http://localhost:2112/metrics`
 
+The metrics approach and worker observability contract are documented in
+[ADR-002](docs/adr/002-add-prometheus-worker-observability.md).
+
 Key application metrics:
 
 - `ai_tasks_processed_total`: AI worker task outcomes by `status`
