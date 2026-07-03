@@ -45,6 +45,10 @@ ENTRYPOINT ["imdb-top250-scraper"]
 # ==============================================================================
 FROM python:3.12-slim AS api
 
+# Build argument for docker group GID (defaults to 999, the standard Linux docker GID)
+# On host systems with different docker GID, build with: --build-arg DOCKER_GID=1000
+ARG DOCKER_GID=999
+
 ENV PYTHONUNBUFFERED=1
 
 # Copy the uv binary from the official image
@@ -77,6 +81,11 @@ ENV PYTHONPATH="/app:/app/src:/app/src/contracts:/app/src/contracts/src"
 
 # Expose API port
 EXPOSE 8000
+
+# Create docker group with configurable GID (defaults to standard 999)
+# This allows the nobody user to access the Docker socket mounted from the host
+RUN groupadd -g ${DOCKER_GID} docker && \
+    usermod -aG docker nobody
 
 # Fix file permissions for nobody user (Debian uses nogroup)
 RUN chown -R nobody:nogroup /app

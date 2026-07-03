@@ -126,6 +126,8 @@ services:
     build:
       context: .
       target: api
+      args:
+        - DOCKER_GID=988
     restart: unless-stopped
     env_file:
       - .env
