@@ -1,6 +1,6 @@
-# IMDB AI Pipeline: Enterprise Data Extraction & Enrichment
+# IMDB AI Pipeline: Data Extraction & Enrichment
 
-A high-performance, distributed data pipeline. It scrapes IMDb charts using asynchronous Playwright, streams the data into Redis, persists normalized movie records with the Go worker, and uses a decoupled Python AI worker to enrich data via Local LLMs (Ollama), all orchestrated by a FastAPI gateway and Docker Compose.
+A distributed data pipeline. It scrapes IMDb charts using asynchronous Playwright, streams the data into Redis, persists normalized movie records with the Go worker, and uses a decoupled Python AI worker to enrich data via Local LLMs (Ollama), all orchestrated by a FastAPI gateway and Docker Compose.
 
 ## 🏗️ Architecture Overview
 
@@ -186,7 +186,7 @@ The benchmark runs with database writes bypassed (`_simulateDbSave` and `Simulat
 | **Median Latency (P50)** | 1.1 ms | **0.5 ms** | **2.2x faster execution** under standard load due to zero runtime runtime abstraction overhead. |
 | **95th Percentile Latency (P95)** | ~2.8 ms | **~1.3 ms** | **2.1x lower latency** for 95% of processing cycles. |
 | **99th Percentile Latency (P99)** | ~7.0 - 9.0 ms | **~3.5 - 5.0 ms** | **Over 2x flatter tail latency**. Go maintains predictable execution; .NET spikes are caused by GC pause jitter. |
-| **RAM Footprint (Working Set)** | ~96 MiB | **~18 MiB** | **5.3x memory reduction**, enabling high-density container packing and lower AWS Fargate fees. |
+| **RAM Footprint (Working Set)** | ~96 MiB | **~18 MiB** | **5.3x memory reduction**, enabling high-density container packing. |
 | **Startup Time (Cold Start)** | ~1,800 ms | **~15 ms** | **50x faster scaling**. Go scales out instantly under load; .NET lags due to CLR and JIT initialization. |
 
 ### Ingestion Telemetry (Grafana Benchmark Panel)
